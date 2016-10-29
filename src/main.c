@@ -78,7 +78,7 @@ int ssa_prepare(int *species, int *stoichiometric_matrix, double *tau, double *p
 	return (reaction_number);
 }
 
-void ssa_step(int *species, int *stoichiometric_matrix, double *tau, double *parameter, int number_of_species, int number_of_reactions, int *matrix_reaction)
+int ssa_step(int *species, int *stoichiometric_matrix, double *tau, double *parameter, int number_of_species, int number_of_reactions, int *matrix_reaction)
 {
 	int j, reaction_number;
 	int reaction_type;
@@ -95,6 +95,7 @@ void ssa_step(int *species, int *stoichiometric_matrix, double *tau, double *par
 			species[j] = 0;
 		}
 	}
+	return(reaction_number);
 }
 
 void evaluate_promotor_state(int *species, int *M, int *species_promoters_indices, int number_of_species, int number_of_binding_sites, int *type_species)
@@ -340,6 +341,7 @@ stoichiometric_matrix_fast[35] = 0;stoichiometric_matrix_fast[36] = 1;stoichiome
 	int flag = 0;
 	while (t_slow < t_stop_slow) {
 		double tau_slow;
+		int reaction_number_slow;
 // Quantify the number of activated, repressed,
 // and free binding sites for each type of promoters
 // x_2[p] = EvaluateBindingSites(M_p(j))
@@ -477,8 +479,8 @@ stoichiometric_matrix_fast[35] = 0;stoichiometric_matrix_fast[36] = 1;stoichiome
 				species_slow[i] = species_fast[common_spices_indices[i]];
 			}
 		}
-		ssa_step(species_slow, stoichiometric_matrix_slow, &tau_slow, parameter_slow, number_of_species_slow, number_of_reactions_slow, slow_matrix_reaction);
-		fprintf(stdout, "%d %f %f slow", iter_kounter, t_slow/SECONDS_PER_DAY, t_slow);
+		reaction_number_slow = ssa_step(species_slow, stoichiometric_matrix_slow, &tau_slow, parameter_slow, number_of_species_slow, number_of_reactions_slow, slow_matrix_reaction);
+		fprintf(stdout, "%d %d %f %f slow", iter_kounter, reaction_number_slow, t_slow/SECONDS_PER_DAY, t_slow);
 		for (i = 0; i < number_of_species_slow; i++) {
 			fprintf(stdout, " %d", species_slow[i]);
 		}
