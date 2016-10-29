@@ -127,7 +127,7 @@ void evaluate_promotor_state(int *species, int *M, int *species_promoters_indice
 			switch (type_species[i]) {
 				case -1:
 /*					species[i] = (sum < 0) ? 1:0;*/
-					species[i] = (inhibitors > free) ? 1:0;
+					species[i] = (inhibitors > 0) ? 1:0;
 				break;
 				case 0:
 /*					species[i] = (sum == 0) ? 1:0;*/
@@ -135,7 +135,8 @@ void evaluate_promotor_state(int *species, int *M, int *species_promoters_indice
 				break;
 				case 1:
 /*					species[i] = (sum > 0) ? 1:0;*/
-					species[i] = (inhibitors < activators) ? 1:0;
+/*					species[i] = (inhibitors < activators) ? 1:0;*/
+					species[i] = (inhibitors == 0 && 0 < activators) ? 1:0;
 				break;
 			}
 		}
@@ -194,7 +195,7 @@ int main(int argc, char**argv)
 	t_start_slow = 0;
 	t_stop_slow = 20 * SECONDS_PER_DAY;
 	t_start_fast = 0;
-	t_stop_fast = 5000 * SECONDS_PER_DAY;
+	t_stop_fast = 1000 * SECONDS_PER_DAY;
 	common_spices_indices = g_new0(int, number_of_species_slow);
 	slow_species_promoters_indices = g_new0(int, number_of_species_slow);
 	slow_species_promoters_indices_type = g_new0(int, number_of_species_slow);
