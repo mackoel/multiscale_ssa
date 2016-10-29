@@ -132,11 +132,16 @@ void evaluate_promotor_state(int *species, int *M, int *species_promoters_indice
 				case 0:
 /*					species[i] = (sum == 0) ? 1:0;*/
 					species[i] = (free > 0) ? 1:0;
-				break;
+//					species[i] = (inhibitors == 0 && activators == 0) ? 1:0;
+//					species[i] = (inhibitors == 0 && free > 0) ? 1:0;
+//					species[i] = (activators == 0 && free > 0) ? 1:0;
+					break;
 				case 1:
 /*					species[i] = (sum > 0) ? 1:0;*/
-/*					species[i] = (inhibitors < activators) ? 1:0;*/
-					species[i] = (inhibitors == 0 && 0 < activators) ? 1:0;
+//					species[i] = (inhibitors < activators) ? 1:0;
+//					species[i] = (inhibitors == 0 && 0 < activators) ? 1:0;
+					species[i] = (inhibitors == 0 && free < activators) ? 1:0;
+//					species[i] = (inhibitors < activators && free < activators) ? 1:0;
 				break;
 			}
 		}
@@ -162,6 +167,7 @@ int main(int argc, char**argv)
 	double t_stop_slow;
 	double t_start_fast;
 	double t_stop_fast;
+	double t_start_cure, t_stop_cure;
 	int iter_kounter, inner_iter_kounter;
 	double t_slow, t_fast;
 	int *common_spices_indices;
@@ -174,15 +180,22 @@ int main(int argc, char**argv)
 	int *species_slow;
 	int *species_fast;
 	int i;
-
+/* Init preudo-random numbers */ 
 	ysubj[0] = LOWBITS;
 	ysubj[1] = (unsigned short)seed;
 	ysubj[2] = (unsigned short) ( seed >> (BYTESIZE * sizeof(unsigned short)) );
-
+/* Set simulation time */
+	t_start_slow = 0;
+	t_stop_slow = 20 * SECONDS_PER_DAY;
+	t_start_fast = 0;
+	t_stop_fast = 0.5 * SECONDS_PER_DAY;
+	t_start_cure = 10 * SECONDS_PER_DAY;
+	t_stop_cure = 13 * SECONDS_PER_DAY;
+/* Allocate */
 	number_of_reactions_slow = 11;
 	number_of_reactions_fast = 6;
 	number_of_species_slow = 7;
-	number_of_species_fast = 7;
+	number_of_species_fast = 8;
 	number_of_binding_sites = 20;
 	number_of_promoters = 2;
 	parameter_slow = g_new0(double, number_of_reactions_slow);
@@ -192,10 +205,6 @@ int main(int argc, char**argv)
 	stoichiometric_matrix_fast = g_new0(int, number_of_reactions_fast * number_of_species_fast);
 	reaction_type_fast = g_new0(int, number_of_reactions_fast);
 	fast_reactions_promoters_indices = g_new0(int, number_of_reactions_fast);
-	t_start_slow = 0;
-	t_stop_slow = 20 * SECONDS_PER_DAY;
-	t_start_fast = 0;
-	t_stop_fast = 1000 * SECONDS_PER_DAY;
 	common_spices_indices = g_new0(int, number_of_species_slow);
 	slow_species_promoters_indices = g_new0(int, number_of_species_slow);
 	slow_species_promoters_indices_type = g_new0(int, number_of_species_slow);
@@ -206,6 +215,7 @@ int main(int argc, char**argv)
 /*
  * Slow species
  * CpAST, mRNA16, QpAST, mRNA1, EBNA1, dimEBNA1, Oct2
+ *   0     1       2      3  	   4     5        6 
  */
 	for (i = 0; i < number_of_species_slow; i++) {
 		common_spices_indices[i] = -1;
@@ -215,50 +225,33 @@ int main(int argc, char**argv)
 	}
 	species_slow[6] = 1.5 * 1e4;
 	species_slow[4] = 0.125 * 1e4;
+	slow_species_promoters_indices[0] = 0;
+	slow_species_promoters_indices[2] = 1;
+	slow_species_promoters_indices_type[0] = 1;
+	slow_species_promoters_indices_type[2] = 1;
 /*
  * Fast species
- * Cp, EBNA1, CpAST, Oct2, CpI, Qp, QpI
+ * Cp, CpAST, CpI, Qp, QpI, EBNA1, dimEBNA1, Oct2
+ *   0     1   2    3    4     5        6     7
  */
+	common_spices_indices[4] = 5; // EBNA1 
+	common_spices_indices[5] = 6; // dimEBNA1
+	common_spices_indices[6] = 7; // Oct2
 	for (i = 0; i < number_of_species_fast; i++) {
 		species_fast[i] = 0;
 		fast_species_promoters_indices[i] = -1;
 		fast_species_promoters_indices_type[i] = 1;
 	}
-	common_spices_indices[4] = 1;
-	common_spices_indices[6] = 3;
-	slow_species_promoters_indices[0] = 0;
-	slow_species_promoters_indices[2] = 1;
-	slow_species_promoters_indices_type[0] = 1;
-	slow_species_promoters_indices_type[2] = 1;
 	fast_species_promoters_indices[0] = 0;
+	fast_species_promoters_indices[1] = 0;
 	fast_species_promoters_indices[2] = 0;
-	fast_species_promoters_indices[4] = 0;
-	fast_species_promoters_indices[5] = 1;
-	fast_species_promoters_indices[6] = 1;
+	fast_species_promoters_indices[3] = 1;
+	fast_species_promoters_indices[4] = 1;
 	fast_species_promoters_indices_type[0] = 0;
-	fast_species_promoters_indices_type[2] = 1;
+	fast_species_promoters_indices_type[1] = 1;
+	fast_species_promoters_indices_type[2] = -1;
+	fast_species_promoters_indices_type[3] = 0;
 	fast_species_promoters_indices_type[4] = -1;
-	fast_species_promoters_indices_type[5] = 0;
-	fast_species_promoters_indices_type[6] = -1;
-/*
- * -2 - unbind an inhibitor
- * -1 - bind an inhibitor
- * 0 - not binding or unbinding
- * +1 - bind activator
- * +2 - unbind activator
- */
-	reaction_type_fast[0] = 1;
-	reaction_type_fast[1] = 2;
-	reaction_type_fast[2] = -1;
-	reaction_type_fast[3] = -2;
-	reaction_type_fast[4] = -1;
-	reaction_type_fast[5] = -2;
-	fast_reactions_promoters_indices[0] = 0;
-	fast_reactions_promoters_indices[1] = 0;
-	fast_reactions_promoters_indices[2] = 0;
-	fast_reactions_promoters_indices[3] = 0;
-	fast_reactions_promoters_indices[4] = 1;
-	fast_reactions_promoters_indices[5] = 1;
 /*
  * Slow species
  * Reaction, CpAST, mRNA16, QpAST, mRNA1, EBNA1, dimEBNA1, Oct2
@@ -301,21 +294,59 @@ int main(int argc, char**argv)
 	
 /*
  * Fast species
- * Reaction, Cp, EBNA1, CpAST, Oct2, CpI, Qp, QpI
- * 0       , -1,   -1,      1,    0,   0,  0,  0
- * 1       ,  1,    1,     -1,    0,   0,  0,  0
- * 2       , -1,    0,      0 ,  -1,   1,  0,  0
- * 3       ,  1,    0,      0,    1,  -1,  0,  0
- * 4       ,  0,   -1,      0,    0,   0, -1,  1
- * 5       ,  0,    1,      0,    0,   0,  1, -1
+ * Reaction, Cp, CpAST, CpI, Qp, QpI, EBNA1, dimEBNA1, Oct2
+ * 0       , -1,      1,   0,  0,  0, 0,    -1,       0
+ * 1       ,  1,     -1,   0,  0,  0, 0,    1,        0
+ * 2       , -1,     0 ,  1,  0,  0,  0,    0,        -1
+ * 3       ,  1,     0,   -1,  0,  0, 0,    0,        1
+ * 4       ,  0,      0,   0, -1,  1, -1,   0,       0
+ * 5       ,  0,      0,   0,  1, -1, 1,   0,        0
  */
-stoichiometric_matrix_fast[0] = -1;stoichiometric_matrix_fast[1] = -1;stoichiometric_matrix_fast[2] = 1;stoichiometric_matrix_fast[3] = 0;stoichiometric_matrix_fast[4] = 0;stoichiometric_matrix_fast[5] = 0;stoichiometric_matrix_fast[6] = 0;
-stoichiometric_matrix_fast[7] = 1;stoichiometric_matrix_fast[8] = 1;stoichiometric_matrix_fast[9] = -1;stoichiometric_matrix_fast[10] = 0;stoichiometric_matrix_fast[11] = 0;stoichiometric_matrix_fast[12] = 0;stoichiometric_matrix_fast[13] = 0;
-stoichiometric_matrix_fast[14] = -1;stoichiometric_matrix_fast[15] = 0;stoichiometric_matrix_fast[16] = 0;stoichiometric_matrix_fast[17] = -1;stoichiometric_matrix_fast[18] = 1;stoichiometric_matrix_fast[19] = 0;stoichiometric_matrix_fast[20] = 0;
-stoichiometric_matrix_fast[21] = 1;stoichiometric_matrix_fast[22] = 0;stoichiometric_matrix_fast[23] = 0;stoichiometric_matrix_fast[24] = 1;stoichiometric_matrix_fast[25] = -1;stoichiometric_matrix_fast[26] = 0;stoichiometric_matrix_fast[27] = 0;
-stoichiometric_matrix_fast[28] = 0;stoichiometric_matrix_fast[29] = -1;stoichiometric_matrix_fast[30] = 0;stoichiometric_matrix_fast[31] = 0;stoichiometric_matrix_fast[32] = 0;stoichiometric_matrix_fast[33] = -1;stoichiometric_matrix_fast[34] = 1;
-stoichiometric_matrix_fast[35] = 0;stoichiometric_matrix_fast[36] = 1;stoichiometric_matrix_fast[37] = 0;stoichiometric_matrix_fast[38] = 0;stoichiometric_matrix_fast[39] = 0;stoichiometric_matrix_fast[40] = 1;stoichiometric_matrix_fast[41] = -1;
+	stoichiometric_matrix_fast[0] = -1;stoichiometric_matrix_fast[1] = 1;stoichiometric_matrix_fast[2] = 0;
+	stoichiometric_matrix_fast[3] = 0;stoichiometric_matrix_fast[4] = 0;stoichiometric_matrix_fast[5] = 0;
+	stoichiometric_matrix_fast[6] = -1;stoichiometric_matrix_fast[7] = 0;
 
+	stoichiometric_matrix_fast[8] = 1;stoichiometric_matrix_fast[9] = -1;stoichiometric_matrix_fast[10] = 0;
+	stoichiometric_matrix_fast[11] = 0;stoichiometric_matrix_fast[12] = 0;stoichiometric_matrix_fast[13] = 0;
+	stoichiometric_matrix_fast[14] = 1;stoichiometric_matrix_fast[15] = 0;
+
+	stoichiometric_matrix_fast[16] = -1;stoichiometric_matrix_fast[17] = 0;stoichiometric_matrix_fast[18] = 1;
+	stoichiometric_matrix_fast[19] = 0;stoichiometric_matrix_fast[20] = 0;stoichiometric_matrix_fast[21] = 0;
+	stoichiometric_matrix_fast[22] = 0;stoichiometric_matrix_fast[23] = -1;
+
+	stoichiometric_matrix_fast[24] = 1;stoichiometric_matrix_fast[25] = 0;stoichiometric_matrix_fast[26] = -1;
+	stoichiometric_matrix_fast[27] = 0;stoichiometric_matrix_fast[28] = 0;stoichiometric_matrix_fast[29] = 0;
+	stoichiometric_matrix_fast[30] = 0;stoichiometric_matrix_fast[31] = 1;
+	
+	stoichiometric_matrix_fast[32] = 0;stoichiometric_matrix_fast[33] = 0;stoichiometric_matrix_fast[34] = 0;
+	stoichiometric_matrix_fast[35] = -1;stoichiometric_matrix_fast[36] = 1;stoichiometric_matrix_fast[37] = -1;
+	stoichiometric_matrix_fast[38] = 0;stoichiometric_matrix_fast[39] = 0;
+
+	stoichiometric_matrix_fast[40] = 0;stoichiometric_matrix_fast[41] = 0;stoichiometric_matrix_fast[42] = 0;
+	stoichiometric_matrix_fast[43] = 1;stoichiometric_matrix_fast[44] = -1;stoichiometric_matrix_fast[45] = 1;
+	stoichiometric_matrix_fast[46] = 0;stoichiometric_matrix_fast[47] = 0;
+
+/*
+ * -2 - unbind an inhibitor
+ * -1 - bind an inhibitor
+ * 0 - not binding or unbinding
+ * +1 - bind activator
+ * +2 - unbind activator
+ */
+	reaction_type_fast[0] = 1;
+	reaction_type_fast[1] = 2;
+	reaction_type_fast[2] = -1;
+	reaction_type_fast[3] = -2;
+	reaction_type_fast[4] = -1;
+	reaction_type_fast[5] = -2;
+	fast_reactions_promoters_indices[0] = 0;
+	fast_reactions_promoters_indices[1] = 0;
+	fast_reactions_promoters_indices[2] = 0;
+	fast_reactions_promoters_indices[3] = 0;
+	fast_reactions_promoters_indices[4] = 1;
+	fast_reactions_promoters_indices[5] = 1;
+
+/* Parameters */
 	parameter_slow[0] = 0.002069;
 	parameter_slow[1] = 0.006240;
 	parameter_slow[2] = 0.005172;
@@ -333,13 +364,17 @@ stoichiometric_matrix_fast[35] = 0;stoichiometric_matrix_fast[36] = 1;stoichiome
 	parameter_fast[3] = 2.5 * 1e-9;
 	parameter_fast[4] = 9.2462 * 1e-12;
 	parameter_fast[5] = 2.1 * 1e-10;
+/* 
+ * Promoters matrix
+ * Regulatory regions of genes 
+ */
 	M = g_new0(int, number_of_promoters * number_of_binding_sites);
 	for (i = 0; i < number_of_promoters * number_of_binding_sites; i++) {
 		M[i] = 0;
 	}
 	iter_kounter = 0;
 	t_slow = t_start_slow;
-	int flag = 0;
+//	int flag = 0; // event flag
 	while (t_slow < t_stop_slow) {
 		double tau_slow;
 		int reaction_number_slow;
@@ -347,9 +382,8 @@ stoichiometric_matrix_fast[35] = 0;stoichiometric_matrix_fast[36] = 1;stoichiome
 // and free binding sites for each type of promoters
 // x_2[p] = EvaluateBindingSites(M_p(j))
 //		evaluate_binding_sites(species_fast, M);
-		if (t_slow > 0.5 * t_stop_slow && flag == 0) {
-			species_slow[6] += 5 * 1e5;
-			flag = 1;
+		if (t_start_cure < t_slow && t_slow < t_stop_cure) {
+			species_slow[6] = MIN(species_slow[6] + 2 * 1e4, 2 * 1e4);
 		}
 		evaluate_promotor_state(species_fast, M, fast_species_promoters_indices, number_of_species_fast, number_of_binding_sites, fast_species_promoters_indices_type);
 		for (i = 0; i < number_of_species_slow; i++) {
