@@ -18,11 +18,13 @@
  */
 
 #include <stdio.h>
-#include <glib.h>
 #include <stdlib.h>
 #include <math.h>
 #include <omp.h>
 #include <limits.h>
+
+#include <glib.h>
+#include <glib/gstdio.h>
 
 #define TMAX 1000000
 #define LOWBITS 0x330E
@@ -84,7 +86,7 @@ int ssa_step(int *species, int *stoichiometric_matrix, double *tau, double *para
 	int reaction_type;
 	int addon;
 	reaction_number = ssa_prepare(species, stoichiometric_matrix, tau, parameter, number_of_species, number_of_reactions);
-	if (reaction_number < 0) return;
+	if (reaction_number < 0) return(reaction_number);
 	reaction_type = matrix_reaction[reaction_number];
 	for (j = 0; j < number_of_species; j++) {
 		addon = stoichiometric_matrix[reaction_number * number_of_species + j];
@@ -148,384 +150,570 @@ void evaluate_promotor_state(int *species, int *M, int *species_promoters_indice
 	}
 }
 
-int main(int argc, char**argv)
+typedef struct {
+	double t_start;
+	double t_end;
+	int type; /* propagate (1)/add bias (2) etc */
+	double *data_protein; /* a table of concentrations/molecule numbers */
+	double *solution_protein;
+	double *data_mrna; /* a table of concentrations/molecule numbers */
+	double *solution_mrna;
+} MSSA_Timeclass;
+
+typedef struct {
+	int coordinate;
+	int length;
+	double energy;
+	int tf_index;
+	int is_bound;
+} MSSA_site;
+
+typedef struct {
+	double *T; /* activation coefficient */
+	double *protein_degradation; /* n_target_genes length */
+	double *mrna_degradation; /* n_target_genes length */
+	double *translation;
+} MSSA_Parameters;
+
+typedef struct {
+	int n_target_genes;
+	int *target_gene_index; /* in the tables */
+	int n_tfs; /* number of table columns */
+	int n_nucs; /* number of table rows */
+	GList *tc_list; /* list of MSSA_Timeclass structures */
+	int *n_sites; /* number of sites in the regulatory region for each target gene */
+	MSSA_site ***allele_0; /* sites on the first allele */
+	MSSA_site ***allele_1; /* sites on the second allele */
+	MSSA_Parameters *parameters;
+} MSSA_Problem;
+
+MSSA_Problem *mssa_read_problem(gchar*filename)
 {
-	printf("multiscale_ssa\n");
-	int number_of_reactions_slow;
-	int number_of_reactions_fast;
-	int number_of_species_slow;
-	int number_of_species_fast;
-	int number_of_binding_sites;
-	int number_of_promoters;
-	int *M;
-	double*parameter_slow;
-	double*parameter_fast;
-	int*stoichiometric_matrix_slow;
-	int*stoichiometric_matrix_fast;
-	int *reaction_type_fast;
+	MSSA_Problem *problem = g_new(MSSA_Problem, 1);
+//	char y[10];
+	FILE*fp = g_fopen(filename, "r");
+	fscanf(fp, "%*s\n");
+//		fscanf(fp, "%s\n", y);
+	fscanf(fp, "%d", &(problem->n_target_genes));
+	problem->target_gene_index = g_new0(int, problem->n_target_genes);
+	for (int i = 0; i < problem->n_target_genes; i++) {
+		fscanf(fp, "%d", &(problem->target_gene_index[i]));
+	}
+	fscanf(fp, "%d", &(problem->n_tfs));
+	fscanf(fp, "%d", &(problem->n_nucs));
+	int ntc;
+	fscanf(fp, "%*s");
+	fscanf(fp, "%d", &ntc);
+	fscanf(fp, "%*s");
+	problem->tc_list = NULL;
+	for (int k = 0; k < ntc; k++) {
+		MSSA_Timeclass *tc = g_new(MSSA_Timeclass, 1);
+		fscanf(fp, "%d %lf %lf\n", &(tc->type), &(tc->t_start), &(tc->t_end));
+		fscanf(fp, "%*s\n");
+		tc->data_protein = g_new0(double, problem->n_nucs * problem->n_tfs);
+		tc->solution_protein = g_new0(double, problem->n_nucs * problem->n_tfs);
+		for (int i = 0; i < problem->n_nucs; i++) {
+			for (int j = 0; j < problem->n_tfs; j++) {
+				fscanf(fp, "%lf", &(tc->data_protein[i * problem->n_tfs + j]));
+			}
+		}
+		tc->data_mrna = g_new0(double, problem->n_nucs * problem->n_tfs);
+		tc->solution_mrna = g_new0(double, problem->n_nucs * problem->n_tfs);
+		problem->tc_list = g_list_append(problem->tc_list, tc);
+		fscanf(fp, "%*s");
+	}
+	problem->n_sites = g_new0(int, problem->n_target_genes);
+	for (int i = 0; i < problem->n_target_genes; i++) {
+		fscanf(fp, "%d", &(problem->n_sites[i]));
+	}
+	fscanf(fp, "%*s");
+	problem->allele_0 = g_new0(MSSA_site**, problem->n_nucs);
+	problem->allele_1 = g_new0(MSSA_site**, problem->n_nucs);
+	problem->allele_0[0] = g_new0(MSSA_site*, problem->n_target_genes);
+	problem->allele_1[0] = g_new0(MSSA_site*, problem->n_target_genes);
+	for (int i = 0; i < problem->n_target_genes; i++) {
+		problem->allele_0[0][i] = g_new0(MSSA_site, problem->n_sites[i]);
+		problem->allele_1[0][i] = g_new0(MSSA_site, problem->n_sites[i]);
+		for (int j = 0; j < problem->n_sites[i]; j++) {
+			fscanf(fp, "%d %*c %d %*f %d %lf", &(problem->allele_0[0][i][j].coordinate), 
+			       &(problem->allele_0[0][i][j].tf_index), &(problem->allele_0[0][i][j].length), 
+			       &(problem->allele_0[0][i][j].energy));
+			problem->allele_0[0][i][j].is_bound = 0;
+			problem->allele_1[0][i][j] = problem->allele_0[0][i][j];
+		}
+		fscanf(fp, "%*s");
+	}
+	for(int k = 1; k < problem->n_nucs; k++) {
+		problem->allele_0[k] = g_new0(MSSA_site*, problem->n_target_genes);
+		problem->allele_1[k] = g_new0(MSSA_site*, problem->n_target_genes);
+		for (int i = 0; i < problem->n_target_genes; i++) {
+			problem->allele_0[k][i] = g_new0(MSSA_site, problem->n_sites[i]);
+			problem->allele_1[k][i] = g_new0(MSSA_site, problem->n_sites[i]);
+			for (int j = 0; j < problem->n_sites[i]; j++) {
+				problem->allele_0[k][i][j] = problem->allele_0[0][i][j];
+				problem->allele_1[k][i][j] = problem->allele_1[0][i][j];
+			}
+		}
+	}
+	problem->parameters = g_new(MSSA_Parameters, 1);
+	problem->parameters->T = g_new0(double, problem->n_target_genes * problem->n_tfs);
+	problem->parameters->protein_degradation = g_new0(double, problem->n_target_genes);
+	problem->parameters->mrna_degradation = g_new0(double, problem->n_target_genes);
+	problem->parameters->translation = g_new0(double, problem->n_target_genes);
+	for (int i = 0; i < problem->n_target_genes; i++) {
+		for (int j = 0; j < problem->n_tfs; j++) {
+			fscanf(fp, "%lf", &(problem->parameters->T[i * problem->n_tfs + j]));
+		}
+		fscanf(fp, "%lf", &(problem->parameters->translation[i]));
+		fscanf(fp, "%lf", &(problem->parameters->protein_degradation[i]));
+		fscanf(fp, "%lf", &(problem->parameters->mrna_degradation[i]));
+	}
+	return(problem);
+}
+
+/* Stoichiometric matrix for fast reactions 
+ * reaction	 allele_0[i] allele_1[i] tf[k]
+ * bind_tf[j]
+ * unbind_tf[j]
+ */
+
+/* Stoichiometric matrix for slow reactions
+ * reaction 
+ * traslation
+ * transcription
+ * degradation
+ */
+
+int mssa_get_reaction_fast(double *solution, MSSA_site ***allele,
+                      double *tau, int *reaction_type, int *tf, int *target, int *site_number,
+				      int *n_sites, 
+                      int n_tfs, int n_target_genes, int ap)
+{
+	int i, j, k, reaction_number, s, l;
+	double *propensity;
+	double *probability;
+	double aggregate;
+	double prop_sum = 0;
+	double random = erand48(ysubj);
+//	fprintf(stdout, "fast %d!\n", ap);
+	int number_of_reactions = 2 * n_tfs * n_target_genes; /* bind/unbind each tf in each promotor */ 
+	propensity = g_new0(double, number_of_reactions);
+	probability = g_new0(double, number_of_reactions);
+/* Binding */
+	for (i = 0; i < n_target_genes; i++) {
+		for (j = 0; j < n_tfs; j++) {
+			double prop = 0; /* Sum of energies of free bs */
+			for (k = 0; k < n_sites[i]; k++) {
+				prop += (allele[ap][i][k].is_bound == 0 && allele[ap][i][k].tf_index == j) ? allele[ap][i][k].energy : 0;
+			}
+			propensity[i * n_tfs + j] = solution[ap * n_tfs + j] * prop;
+			prop_sum += propensity[i * n_tfs + j];
+		}
+
+	}
+/* Unbinding */
+	for (i = 0; i < n_target_genes; i++) {
+		for (j = 0; j < n_tfs; j++) {
+			double prop = 0; /* Sum of energies of bound bs */
+			for (k = 0; k < n_sites[i]; k++) {
+				prop += (allele[ap][i][k].is_bound == 1 && allele[ap][i][k].tf_index == j) ? allele[ap][i][k].energy : 0;
+			}
+			propensity[n_tfs * n_target_genes + i * n_tfs + j] = solution[ap * n_tfs + j] * prop;
+			prop_sum += propensity[n_tfs * n_target_genes + i * n_tfs + j];
+		}
+
+	}
+	if (prop_sum <= 0.00000000001) {
+		g_warning("fast %d: Sum of propensities is too small %g!", ap, prop_sum); 
+		(*tau) = TMAX;
+		g_free(propensity);
+		g_free(probability);
+		return(-1);
+	}
+	reaction_number = -1;
+	aggregate = 0;
+/* Binding */
+	for (i = 0; i < n_target_genes; i++) {
+		for (j = 0; j < n_tfs; j++) {
+			aggregate += propensity[i * n_tfs + j];
+			probability[i * n_tfs + j] = aggregate / prop_sum;
+			if (random < probability[i * n_tfs + j]) {
+				reaction_number = i * n_tfs + j;
+				(*target) = i;
+				(*tf) = j;
+				(*reaction_type) = 1;
+				break;
+			}
+		}
+		if (reaction_number > 0) break;
+	}
+/* Unbinding */
+	if (reaction_number < 0) {
+		for (i = 0; i < n_target_genes; i++) {
+			for (j = 0; j < n_tfs; j++) {
+				aggregate += propensity[n_tfs * n_target_genes + i * n_tfs + j];
+				probability[n_tfs * n_target_genes + i * n_tfs + j] = aggregate / prop_sum;
+				if (random < probability[n_tfs * n_target_genes + i * n_tfs + j]) {
+					reaction_number = n_tfs * n_target_genes + i * n_tfs + j;
+					(*target) = i;
+					(*tf) = j;
+					(*reaction_type) = 0;
+					break;
+				}
+			}
+			if (reaction_number > 0) break;
+		}
+	}
+	(*tau) = -log(erand48(ysubj)) / prop_sum;
+	(*site_number) = -1;
+	l = floor(erand48(ysubj) * n_sites[(*target)]);
+	if (reaction_number > 0) {
+		s = l;
+		for (k = 0; k < n_sites[(*target)]; k++) {
+			/* Looking for a bound/unbound site */
+			if (allele[ap][(*target)][s].is_bound == (1 - (*reaction_type))) {
+				(*site_number) = s;
+				allele[ap][(*target)][s].is_bound = (*reaction_type);
+				solution[ap * n_tfs + (*tf)] += ((*reaction_type) == 1) ? -1 : 1;
+				if (solution[ap * n_tfs + (*tf)] < 0) {
+					g_warning("fast reaction n %d t %d: ap %d tf %d target %d < 0", reaction_number, (*reaction_type), ap, (*tf), (*target));
+					solution[ap * n_tfs + (*tf)] = 0;
+				}
+				break;
+			}
+			s++;
+			if (s > n_sites[(*target)] - 1) {
+				s = 0;
+			}
+		}
+	}
+	g_free(propensity);
+	g_free(probability);
+	return (reaction_number);
+}
+
+int mssa_get_reaction_slow(double *solution_mrna, 
+                           double *solution_protein, 
+                           MSSA_site ***allele_0, 
+                           MSSA_site ***allele_1,
+                           double *tau, 
+                           int *reaction_type, 
+                           int *target, 
+                           int *target_gene_index,
+                           int *n_sites, 
+                           double *T, 
+                           double *protein_degradation, 
+                           double *mrna_degradation, 
+                           double *translation,
+                           int n_tfs, 
+                           int n_target_genes, 
+                           int ap)
+{
+	int i, k, reaction_number;
+	double *propensity;
+	double *probability;
+	double aggregate;
+	double prop_sum = 0;
+	double random = erand48(ysubj);
+	int number_of_reactions = 2 * n_target_genes + /* transcription */ 
+		n_target_genes + /* translation */
+		n_target_genes + /* degradation */
+		n_target_genes; /* degradation */ 
+	propensity = g_new0(double, number_of_reactions);
+	probability = g_new0(double, number_of_reactions);
+/* transcription */
+	for (i = 0; i < n_target_genes; i++) {
+		double prop = 1; /* Product of T of bound bs */
+		int zero = 1;
+		for (k = 0; k < n_sites[i]; k++) {
+			if (allele_0[ap][i][k].is_bound == 1) {
+				prop *= T[i * n_tfs + allele_0[ap][i][k].tf_index];
+				zero = 0;
+			}
+			
+		}
+		propensity[i] = (zero == 0) ? prop : 0;
+		prop_sum += propensity[i];
+	}
+	for (i = 0; i < n_target_genes; i++) {
+		double prop = 1; /* Product of T of bound bs */
+		int zero = 1;
+		for (k = 0; k < n_sites[i]; k++) {
+			if (allele_1[ap][i][k].is_bound == 1) {
+				prop *= T[i * n_tfs + allele_1[ap][i][k].tf_index];
+				zero = 0;
+			}
+			
+		}
+		propensity[n_target_genes + i] = (zero == 0) ? prop : 0;
+		prop_sum += propensity[n_target_genes + i];
+	}
+/* translation */
+	for (i = 0; i < n_target_genes; i++) {
+		k = target_gene_index[i];
+		propensity[2 * n_target_genes + i] = solution_mrna[ap * n_tfs + k] * translation[i];
+		prop_sum += propensity[2 * n_target_genes + i];
+	}
+/* mrna degradation */
+	for (i = 0; i < n_target_genes; i++) {
+		k = target_gene_index[i];
+		propensity[3 * n_target_genes + i] = solution_mrna[ap * n_tfs + k] * mrna_degradation[i];
+		prop_sum += propensity[3 * n_target_genes + i];
+	}
+/* protein degradation */
+	for (i = 0; i < n_target_genes; i++) {
+		k = target_gene_index[i];
+		propensity[4 * n_target_genes + i] = solution_protein[ap * n_tfs + k] * protein_degradation[i];
+		prop_sum += propensity[4 * n_target_genes + i];
+	}
+	if (prop_sum <= 0.00000000001) {
+		g_warning("slow Sum of propensities is too small %g!", prop_sum); 
+		(*tau) = TMAX;
+		g_free(propensity);
+		g_free(probability);
+		return(-1);
+	}
+	reaction_number = -1;
+	aggregate = 0;
+/* transcription */
+	for (i = 0; i < n_target_genes; i++) {
+		aggregate += propensity[i];
+		probability[i] = aggregate / prop_sum;
+		if (random < probability[i]) {
+			reaction_number = i;
+			(*target) = i;
+			(*reaction_type) = 1;
+			break;
+		}
+	}
+	if (reaction_number < 0) {
+		for (i = 0; i < n_target_genes; i++) {
+			aggregate += propensity[n_target_genes + i];
+			probability[n_target_genes + i] = aggregate / prop_sum;
+			if (random < probability[n_target_genes + i]) {
+				reaction_number = n_target_genes + i;
+				(*target) = i;
+				(*reaction_type) = 2;
+				break;
+			}
+		}
+	}
+/* translation */
+	if (reaction_number < 0) {
+		for (i = 0; i < n_target_genes; i++) {
+			aggregate += propensity[2 * n_target_genes + i];
+			probability[2 * n_target_genes + i] = aggregate / prop_sum;
+			if (random < probability[2 * n_target_genes + i]) {
+				reaction_number = 2 * n_target_genes + i;
+				(*target) = i;
+				(*reaction_type) = 3;
+				break;
+			}
+		}
+	}
+	if (reaction_number < 0) {
+/* mrna degradation */
+		for (i = 0; i < n_target_genes; i++) {
+			aggregate += propensity[3 * n_target_genes + i];
+			probability[3 * n_target_genes + i] = aggregate / prop_sum;
+			if (random < probability[3 * n_target_genes + i]) {
+				reaction_number = 3 * n_target_genes + i;
+				(*target) = i;
+				(*reaction_type) = 4;
+				break;
+			}
+		}
+	}
+	if (reaction_number < 0) {
+/* protein degradation */
+		for (i = 0; i < n_target_genes; i++) {
+			aggregate += propensity[4 * n_target_genes + i];
+			probability[4 * n_target_genes + i] = aggregate / prop_sum;
+			if (random < probability[4 * n_target_genes + i]) {
+				reaction_number = 4 * n_target_genes + i;
+				(*target) = i;
+				(*reaction_type) = 5;
+				break;
+			}
+		}
+	}
+	(*tau) = -log(erand48(ysubj)) / prop_sum;
+	switch ((*reaction_type)) {
+		case 1:
+			k = target_gene_index[(*target)];
+			solution_mrna[ap * n_tfs + k]++;
+		break;
+		case 2:
+			k = target_gene_index[(*target)];
+			solution_mrna[ap * n_tfs + k]++;
+		break;
+		case 3:
+			k = target_gene_index[(*target)];
+			solution_protein[ap * n_tfs + k]++;
+		break;
+		case 4:
+			k = target_gene_index[(*target)];
+			solution_mrna[ap * n_tfs + k]--;
+			if (solution_mrna[ap * n_tfs + k] < 0) {
+				g_warning("slow mrna: ap %d tf %d < 0", ap, k);
+				solution_protein[ap * n_tfs + k] = 0;
+			}
+		break;
+		case 5:
+			k = target_gene_index[(*target)];
+			solution_protein[ap * n_tfs + k]--;
+			if (solution_protein[ap * n_tfs + k] < 0) {
+				g_warning("slow prot: ap %d tf %d < 0", ap, k);
+				solution_protein[ap * n_tfs + k] = 0;
+			}
+		break;
+	}
+	g_free(propensity);
+	g_free(probability);
+	return (reaction_number);
+}
+
+void add_bias (MSSA_Timeclass *tc, MSSA_Problem *problem)
+{
+	printf("multiscale_ssa add bias\n");
+	for (int i = 0; i < problem->n_nucs; i++) {
+		for (int j = 0; j < problem->n_tfs; j++) {
+			tc->solution_mrna[i * problem->n_tfs + j] = tc->data_mrna[i * problem->n_tfs + j];
+			tc->solution_protein[i * problem->n_tfs + j] = tc->data_protein[i * problem->n_tfs + j];
+		}
+	}
+}
+
+void propagate (MSSA_Timeclass *tc, MSSA_Problem *problem)
+{
+	printf("multiscale_ssa propagate\n");
 	double t_start_slow;
 	double t_stop_slow;
 	double t_start_fast;
 	double t_stop_fast;
-	double t_start_cure, t_stop_cure;
-	int iter_kounter, inner_iter_kounter;
+	int iter_kounter;
 	double t_slow, t_fast;
-	int *common_spices_indices;
-	int *slow_species_promoters_indices;
-	int *slow_matrix_reaction;
-	int *fast_species_promoters_indices;
-	int *fast_reactions_promoters_indices;
-	int *slow_species_promoters_indices_type;
-	int *fast_species_promoters_indices_type;
-	int *species_slow;
-	int *species_fast;
-	int i;
-/* Init preudo-random numbers */ 
-	ysubj[0] = LOWBITS;
-	ysubj[1] = (unsigned short)seed;
-	ysubj[2] = (unsigned short) ( seed >> (BYTESIZE * sizeof(unsigned short)) );
 /* Set simulation time */
-	t_start_slow = 0;
-	t_stop_slow = 20 * SECONDS_PER_DAY;
+	t_start_slow = tc->t_start;
+	t_stop_slow = tc->t_end;
 	t_start_fast = 0;
-	t_stop_fast = 0.5 * SECONDS_PER_DAY;
-	t_start_cure = 10 * SECONDS_PER_DAY;
-	t_stop_cure = 13 * SECONDS_PER_DAY;
-/* Allocate */
-	number_of_reactions_slow = 11;
-	number_of_reactions_fast = 6;
-	number_of_species_slow = 7;
-	number_of_species_fast = 8;
-	number_of_binding_sites = 20;
-	number_of_promoters = 2;
-	parameter_slow = g_new0(double, number_of_reactions_slow);
-	parameter_fast = g_new0(double, number_of_reactions_fast);
-	stoichiometric_matrix_slow = g_new0(int, number_of_reactions_slow * number_of_species_slow);
-	slow_matrix_reaction = g_new0(int, number_of_reactions_slow);
-	stoichiometric_matrix_fast = g_new0(int, number_of_reactions_fast * number_of_species_fast);
-	reaction_type_fast = g_new0(int, number_of_reactions_fast);
-	fast_reactions_promoters_indices = g_new0(int, number_of_reactions_fast);
-	common_spices_indices = g_new0(int, number_of_species_slow);
-	slow_species_promoters_indices = g_new0(int, number_of_species_slow);
-	slow_species_promoters_indices_type = g_new0(int, number_of_species_slow);
-	fast_species_promoters_indices = g_new0(int, number_of_species_fast);
-	fast_species_promoters_indices_type = g_new0(int, number_of_species_fast);
-	species_slow = g_new0(int, number_of_species_slow);
-	species_fast = g_new0(int, number_of_species_fast);
-/*
- * Slow species
- * CpAST, mRNA16, QpAST, mRNA1, EBNA1, dimEBNA1, Oct2
- *   0     1       2      3  	   4     5        6 
- */
-	for (i = 0; i < number_of_species_slow; i++) {
-		common_spices_indices[i] = -1;
-		slow_species_promoters_indices[i] = -1;
-		slow_species_promoters_indices_type[i] = 1;
-		species_slow[i] = 0;
-	}
-	species_slow[6] = 1.5 * 1e4;
-	species_slow[4] = 0.125 * 1e4;
-	slow_species_promoters_indices[0] = 0;
-	slow_species_promoters_indices[2] = 1;
-	slow_species_promoters_indices_type[0] = 1;
-	slow_species_promoters_indices_type[2] = 1;
-/*
- * Fast species
- * Cp, CpAST, CpI, Qp, QpI, EBNA1, dimEBNA1, Oct2
- *   0     1   2    3    4     5        6     7
- */
-	common_spices_indices[4] = 5; // EBNA1 
-	common_spices_indices[5] = 6; // dimEBNA1
-	common_spices_indices[6] = 7; // Oct2
-	for (i = 0; i < number_of_species_fast; i++) {
-		species_fast[i] = 0;
-		fast_species_promoters_indices[i] = -1;
-		fast_species_promoters_indices_type[i] = 1;
-	}
-	fast_species_promoters_indices[0] = 0;
-	fast_species_promoters_indices[1] = 0;
-	fast_species_promoters_indices[2] = 0;
-	fast_species_promoters_indices[3] = 1;
-	fast_species_promoters_indices[4] = 1;
-	fast_species_promoters_indices_type[0] = 0;
-	fast_species_promoters_indices_type[1] = 1;
-	fast_species_promoters_indices_type[2] = -1;
-	fast_species_promoters_indices_type[3] = 0;
-	fast_species_promoters_indices_type[4] = -1;
-/*
- * Slow species
- * Reaction, CpAST, mRNA16, QpAST, mRNA1, EBNA1, dimEBNA1, Oct2
- * 0       , -1   , 1,      0,      0,    0,     0,         0
- * 1       , 0   , 0,      -1,      1,    0,     0,         0
- * 2       , 0   , -1,      0,      0,    1,     0,         0
- * 3       , 0   , 0,      0,      -1,    1,     0,         0
- * 4       , 0   , 0,      0,      0,    -2,     1,         0
- * 5       , 0   , 0,      0,      0,    2,     -1,         0
- * 6       , 0   , -1,      0,      0,    0,     0,         0
- * 7       , 0   , 0,      0,      -1,    0,     0,         0
- * 8       , 0   , 0,      0,      0,    -1,     0,         0
- * 9       , 0   , 0,      0,      0,    0,     -1,         0
- * 10      , 0   , 0,      0,      0,    0,     0,         -1
- */
-
-	stoichiometric_matrix_slow[0] = -1;stoichiometric_matrix_slow[1] = 1;stoichiometric_matrix_slow[2] = 0;stoichiometric_matrix_slow[3] = 0;stoichiometric_matrix_slow[4] = 0;stoichiometric_matrix_slow[5] = 0;stoichiometric_matrix_slow[6] = 0;
-	stoichiometric_matrix_slow[7] = 0;stoichiometric_matrix_slow[8] = 0;stoichiometric_matrix_slow[9] = -1;stoichiometric_matrix_slow[10] = 1;stoichiometric_matrix_slow[11] = 0;stoichiometric_matrix_slow[12] = 0;stoichiometric_matrix_slow[13] = 0;
-	stoichiometric_matrix_slow[14] = 0;stoichiometric_matrix_slow[15] = -1;stoichiometric_matrix_slow[16] = 0;stoichiometric_matrix_slow[17] = 0;stoichiometric_matrix_slow[18] = 1;stoichiometric_matrix_slow[19] = 0;stoichiometric_matrix_slow[20] = 0;
-	stoichiometric_matrix_slow[21] = 0;stoichiometric_matrix_slow[22] = 0;stoichiometric_matrix_slow[23] = 0;stoichiometric_matrix_slow[24] = -1;stoichiometric_matrix_slow[25] = 1;stoichiometric_matrix_slow[26] = 0;stoichiometric_matrix_slow[27] = 0;
-	stoichiometric_matrix_slow[28] = 0;stoichiometric_matrix_slow[29] = 0;stoichiometric_matrix_slow[30] = 0;stoichiometric_matrix_slow[31] = 0;stoichiometric_matrix_slow[32] = -2;stoichiometric_matrix_slow[33] = 1;stoichiometric_matrix_slow[34] = 0;
-	stoichiometric_matrix_slow[35] = 0;stoichiometric_matrix_slow[36] = 0;stoichiometric_matrix_slow[36] = 0;stoichiometric_matrix_slow[37] = 0;stoichiometric_matrix_slow[38] = 2;stoichiometric_matrix_slow[39] = -1;stoichiometric_matrix_slow[41] = 0;
-	stoichiometric_matrix_slow[42] = 0;stoichiometric_matrix_slow[43] = -1;stoichiometric_matrix_slow[44] = 0;stoichiometric_matrix_slow[45] = 0;stoichiometric_matrix_slow[46] = 0;stoichiometric_matrix_slow[47] = 0;stoichiometric_matrix_slow[48] = 0;
-	stoichiometric_matrix_slow[49] = 0;stoichiometric_matrix_slow[50] = 0;stoichiometric_matrix_slow[51] = 0;stoichiometric_matrix_slow[52] = -1;stoichiometric_matrix_slow[53] = 0;stoichiometric_matrix_slow[54] = 0;stoichiometric_matrix_slow[55] = 0;
-	stoichiometric_matrix_slow[56] = 0;stoichiometric_matrix_slow[57] = 0;stoichiometric_matrix_slow[58] = 0;stoichiometric_matrix_slow[59] = 0;stoichiometric_matrix_slow[60] = -1;stoichiometric_matrix_slow[61] = 0;stoichiometric_matrix_slow[62] = 0;
-	stoichiometric_matrix_slow[63] = 0;stoichiometric_matrix_slow[64] = 0;stoichiometric_matrix_slow[65] = 0;stoichiometric_matrix_slow[66] = 0;stoichiometric_matrix_slow[67] = 0;stoichiometric_matrix_slow[68] = -1;stoichiometric_matrix_slow[69] = 0;
-	stoichiometric_matrix_slow[70] = 0;stoichiometric_matrix_slow[71] = 0;stoichiometric_matrix_slow[72] = 0;stoichiometric_matrix_slow[73] = 0;stoichiometric_matrix_slow[74] = 0;stoichiometric_matrix_slow[75] = 0;stoichiometric_matrix_slow[76] = -1;
-
-	slow_matrix_reaction[0] = 1;
-	slow_matrix_reaction[1] = 1;
-	slow_matrix_reaction[2] = 1;
-	slow_matrix_reaction[3] = 1;
-	slow_matrix_reaction[4] = 0;
-	slow_matrix_reaction[5] = 0;
-	slow_matrix_reaction[6] = 0;
-	slow_matrix_reaction[7] = 0;
-	slow_matrix_reaction[8] = 0;
-	slow_matrix_reaction[9] = 0;
-	slow_matrix_reaction[10] = 0;
-	
-/*
- * Fast species
- * Reaction, Cp, CpAST, CpI, Qp, QpI, EBNA1, dimEBNA1, Oct2
- * 0       , -1,      1,   0,  0,  0, 0,    -1,       0
- * 1       ,  1,     -1,   0,  0,  0, 0,    1,        0
- * 2       , -1,     0 ,  1,  0,  0,  0,    0,        -1
- * 3       ,  1,     0,   -1,  0,  0, 0,    0,        1
- * 4       ,  0,      0,   0, -1,  1, -1,   0,       0
- * 5       ,  0,      0,   0,  1, -1, 1,   0,        0
- */
-	stoichiometric_matrix_fast[0] = -1;stoichiometric_matrix_fast[1] = 1;stoichiometric_matrix_fast[2] = 0;
-	stoichiometric_matrix_fast[3] = 0;stoichiometric_matrix_fast[4] = 0;stoichiometric_matrix_fast[5] = 0;
-	stoichiometric_matrix_fast[6] = -1;stoichiometric_matrix_fast[7] = 0;
-
-	stoichiometric_matrix_fast[8] = 1;stoichiometric_matrix_fast[9] = -1;stoichiometric_matrix_fast[10] = 0;
-	stoichiometric_matrix_fast[11] = 0;stoichiometric_matrix_fast[12] = 0;stoichiometric_matrix_fast[13] = 0;
-	stoichiometric_matrix_fast[14] = 1;stoichiometric_matrix_fast[15] = 0;
-
-	stoichiometric_matrix_fast[16] = -1;stoichiometric_matrix_fast[17] = 0;stoichiometric_matrix_fast[18] = 1;
-	stoichiometric_matrix_fast[19] = 0;stoichiometric_matrix_fast[20] = 0;stoichiometric_matrix_fast[21] = 0;
-	stoichiometric_matrix_fast[22] = 0;stoichiometric_matrix_fast[23] = -1;
-
-	stoichiometric_matrix_fast[24] = 1;stoichiometric_matrix_fast[25] = 0;stoichiometric_matrix_fast[26] = -1;
-	stoichiometric_matrix_fast[27] = 0;stoichiometric_matrix_fast[28] = 0;stoichiometric_matrix_fast[29] = 0;
-	stoichiometric_matrix_fast[30] = 0;stoichiometric_matrix_fast[31] = 1;
-	
-	stoichiometric_matrix_fast[32] = 0;stoichiometric_matrix_fast[33] = 0;stoichiometric_matrix_fast[34] = 0;
-	stoichiometric_matrix_fast[35] = -1;stoichiometric_matrix_fast[36] = 1;stoichiometric_matrix_fast[37] = -1;
-	stoichiometric_matrix_fast[38] = 0;stoichiometric_matrix_fast[39] = 0;
-
-	stoichiometric_matrix_fast[40] = 0;stoichiometric_matrix_fast[41] = 0;stoichiometric_matrix_fast[42] = 0;
-	stoichiometric_matrix_fast[43] = 1;stoichiometric_matrix_fast[44] = -1;stoichiometric_matrix_fast[45] = 1;
-	stoichiometric_matrix_fast[46] = 0;stoichiometric_matrix_fast[47] = 0;
-
-/*
- * -2 - unbind an inhibitor
- * -1 - bind an inhibitor
- * 0 - not binding or unbinding
- * +1 - bind activator
- * +2 - unbind activator
- */
-	reaction_type_fast[0] = 1;
-	reaction_type_fast[1] = 2;
-	reaction_type_fast[2] = -1;
-	reaction_type_fast[3] = -2;
-	reaction_type_fast[4] = -1;
-	reaction_type_fast[5] = -2;
-	fast_reactions_promoters_indices[0] = 0;
-	fast_reactions_promoters_indices[1] = 0;
-	fast_reactions_promoters_indices[2] = 0;
-	fast_reactions_promoters_indices[3] = 0;
-	fast_reactions_promoters_indices[4] = 1;
-	fast_reactions_promoters_indices[5] = 1;
-
-/* Parameters */
-	parameter_slow[0] = 0.002069;
-	parameter_slow[1] = 0.006240;
-	parameter_slow[2] = 0.005172;
-	parameter_slow[3] = 0.0156;
-	parameter_slow[4] = 1.8492 * 1e-10;
-	parameter_slow[5] = 1e-8;
-	parameter_slow[6] = 1.9254 * 1e-5;
-	parameter_slow[7] = 1.9254 * 1e-5;
-	parameter_slow[8] = 9.627 * 1e-6;
-	parameter_slow[9] = 9.627 * 1e-6;
-	parameter_slow[10] = 9.627 * 1e-6;
-	parameter_fast[0] = 9.2462 * 1e-12;
-	parameter_fast[1] = 1.5 * 1e-11;
-	parameter_fast[2] = 9.2462 * 1e-12;
-	parameter_fast[3] = 2.5 * 1e-9;
-	parameter_fast[4] = 9.2462 * 1e-12;
-	parameter_fast[5] = 2.1 * 1e-10;
-/* 
- * Promoters matrix
- * Regulatory regions of genes 
- */
-	M = g_new0(int, number_of_promoters * number_of_binding_sites);
-	for (i = 0; i < number_of_promoters * number_of_binding_sites; i++) {
-		M[i] = 0;
-	}
+	t_stop_fast = 0.050;
+/* Simualte */
 	iter_kounter = 0;
 	t_slow = t_start_slow;
-//	int flag = 0; // event flag
 	while (t_slow < t_stop_slow) {
-		double tau_slow;
-		int reaction_number_slow;
-// Quantify the number of activated, repressed,
-// and free binding sites for each type of promoters
-// x_2[p] = EvaluateBindingSites(M_p(j))
-//		evaluate_binding_sites(species_fast, M);
-		if (t_start_cure < t_slow && t_slow < t_stop_cure) {
-			species_slow[6] = MIN(species_slow[6] + 2 * 1e4, 2 * 1e4);
-		}
-		evaluate_promotor_state(species_fast, M, fast_species_promoters_indices, number_of_species_fast, number_of_binding_sites, fast_species_promoters_indices_type);
-		for (i = 0; i < number_of_species_slow; i++) {
-			if (common_spices_indices[i] > 0) {
-				species_fast[common_spices_indices[i]] = species_slow[i];
-			}
-		}
-		t_fast = t_start_fast;
-		inner_iter_kounter = 0;
-		while (t_fast < t_stop_fast) {
-			double tau_fast;
-			int promoter_number;
-			int site_number;
-			int reaction_type;
-			int reaction_number;
-			int k, l, s;
-			reaction_number = ssa_prepare(species_fast, stoichiometric_matrix_fast, &tau_fast, parameter_fast, number_of_species_fast, number_of_reactions_fast);
-			reaction_type = reaction_type_fast[reaction_number];
-			promoter_number = fast_reactions_promoters_indices[reaction_number];
-			site_number = -1;
-			switch (reaction_type) {
-				case -2: /* Unbind an inhibitor */
-					l = floor(erand48(ysubj) * number_of_binding_sites);
-					s = l;
-					for (k = 0; k < number_of_binding_sites; k++) {
-						/* Looking for a bound inhbitor */
-						if (M[promoter_number * number_of_binding_sites + s] == -1) {
-							site_number = s;
-							break;
-						}
-						s++;
-						if (s > number_of_binding_sites - 1) {
-							s = 0;
-						}
-					}
-					if (site_number > -1) {
-						M[promoter_number * number_of_binding_sites + site_number] = 0;
-					}
-				break;
-				case -1: /* Bind an inhibitor */
-					l = floor(erand48(ysubj) * number_of_binding_sites);
-					s = l;
-					for (k = 0; k < number_of_binding_sites; k++) {
-						/* Looking for a free site */
-						if (M[promoter_number * number_of_binding_sites + s] == 0) {
-							site_number = s;
-							break;
-						}
-						s++;
-						if (s > number_of_binding_sites - 1) {
-							s = 0;
-						}
-					}
-					if (site_number > -1) {
-						M[promoter_number * number_of_binding_sites + site_number] = -1;
-					}
-				break;
-				case 1: /* Bind activator */
-					l = floor(erand48(ysubj) * number_of_binding_sites);
-					s = l;
-					for (k = 0; k < number_of_binding_sites; k++) {
-						/* Looking for a free site */
-						if (M[promoter_number * number_of_binding_sites + s] == 0) {
-							site_number = s;
-							break;
-						}
-						s++;
-						if (s > number_of_binding_sites - 1) {
-							s = 0;
-						}
-					}
-					if (site_number > -1) {
-						M[promoter_number * number_of_binding_sites + site_number] = 1;
-					}
-				break;
-				case 2: /* Unbind an activator */
-					l = floor(erand48(ysubj) * number_of_binding_sites);
-					s = l;
-					for (k = 0; k < number_of_binding_sites; k++) {
-						/* Looking for a bound activator */
-						if (M[promoter_number * number_of_binding_sites + s] == 1) {
-							site_number = s;
-							break;
-						}
-						s++;
-						if (s > number_of_binding_sites - 1) {
-							s = 0;
-						}
-					}
-					if (site_number > -1) {
-						M[promoter_number * number_of_binding_sites + site_number] = 0;
-					}
-				break;
-			}
-			if (site_number > -1) {
-/*				for (i = 0; i < number_of_species_fast; i++) {
-					if (i != 1 && i != 3) continue;	
-					species_fast[i] += stoichiometric_matrix_fast[reaction_number * number_of_species_fast + i];
-					if (species_fast[i] < 0) {
-						g_warning("Specie fast %d < 0", i);
-						species_fast[i] = 0;
-					}
-				}*/
-				for (i = 0; i < number_of_species_slow; i++) {
-					k = common_spices_indices[i];
-					if (k > 0) {
-						species_fast[k] += stoichiometric_matrix_fast[reaction_number * number_of_species_fast + k];
-						if (species_fast[k] < 0) {
-							g_warning("Specie fast %d < 0", k);
-							species_fast[k] = 0;
-						}
-					}
+		double t_synch_start = t_slow;
+		double t_synch_stop = t_slow + (t_stop_slow - t_start_slow) / 1;
+		for (int ap = 0; ap < problem->n_nucs; ap++) {
+			double t_synch = t_synch_start;
+			iter_kounter = 0;
+			while (t_synch < t_synch_stop && iter_kounter < 1e2) {
+				double tau_synch;
+				int reaction_number_slow, inner_iter_kounter;
+				int reaction_type_slow, promoter_number_slow;
+				/* Allele_0 */
+				t_fast = t_start_fast;
+				inner_iter_kounter = 0;
+				while (t_fast < t_stop_fast) {
+					double tau_fast;
+					int promoter_number, tf;
+					int site_number;
+					int reaction_type;
+					int reaction_number;
+					reaction_number = mssa_get_reaction_fast(tc->solution_protein, problem->allele_0, 
+					                                         &tau_fast, 
+					                                         &reaction_type, &tf, &promoter_number, &site_number,
+					                                         problem->n_sites, problem->n_tfs, 
+					                                         problem->n_target_genes, ap);
+//					printf("multiscale_ssa %d a0 %f %f %f %d\n", ap, t_synch, t_fast, tau_fast, reaction_number);
+					t_fast += tau_fast;
+					inner_iter_kounter++;
 				}
-			}
-/*
-			fprintf(stdout, "%f %d %f %f fast", t_slow, inner_iter_kounter, t_fast, tau_fast);
-			for (i = 0; i < number_of_species_fast; i++) {
-				fprintf(stdout, " %d", species_fast[i]);
-			}
-			fprintf(stdout, " reaction %d %d %d %d\n", reaction_number, reaction_type, promoter_number, site_number);
-*/  
-			t_fast += tau_fast;
-			inner_iter_kounter++;
-		}
-		evaluate_promotor_state(species_slow, M, slow_species_promoters_indices, number_of_species_slow, number_of_binding_sites, slow_species_promoters_indices_type);
-		for (i = 0; i < number_of_species_slow; i++) {
-			if (common_spices_indices[i] > 0) {
-				species_slow[i] = species_fast[common_spices_indices[i]];
-			}
-		}
-		reaction_number_slow = ssa_step(species_slow, stoichiometric_matrix_slow, &tau_slow, parameter_slow, number_of_species_slow, number_of_reactions_slow, slow_matrix_reaction);
-		fprintf(stdout, "%d %d %f %f slow", iter_kounter, reaction_number_slow, t_slow/SECONDS_PER_DAY, t_slow);
-		for (i = 0; i < number_of_species_slow; i++) {
-			fprintf(stdout, " %d", species_slow[i]);
-		}
-		fprintf(stdout, " fast");
-		for (i = 0; i < number_of_species_fast; i++) {
-			fprintf(stdout, " %d", species_fast[i]);
+				/* Allele_1 */
+				t_fast = t_start_fast;
+				inner_iter_kounter = 0;
+				while (t_fast < t_stop_fast) {
+					double tau_fast;
+					int promoter_number, tf;
+					int site_number;
+					int reaction_type;
+					int reaction_number;
+					reaction_number = mssa_get_reaction_fast(tc->solution_protein, problem->allele_1, 
+					                                         &tau_fast, 
+					                                         &reaction_type, &tf, &promoter_number, &site_number,
+					                                         problem->n_sites, problem->n_tfs, 
+					                                         problem->n_target_genes, ap);
+//					printf("multiscale_ssa %d a1 %f %f %f %d\n", ap, t_synch, t_fast, tau_fast, reaction_number);
+					t_fast += tau_fast;
+					inner_iter_kounter++;
+				}
+				reaction_number_slow = mssa_get_reaction_slow(tc->solution_mrna, 
+				                                              tc->solution_protein, 
+				                                              problem->allele_0, 
+				                                              problem->allele_1, 
+				                                              &tau_synch,
+				                                              &reaction_type_slow, 
+				                                              &promoter_number_slow, 
+				                                              problem->target_gene_index,
+				                                              problem->n_sites,
+				                                              problem->parameters->T,
+				                                              problem->parameters->protein_degradation, 
+				                                              problem->parameters->mrna_degradation,
+				                                              problem->parameters->translation,
+				                                              problem->n_tfs, 
+				                                              problem->n_target_genes, 
+				                                              ap);
+				printf("multiscale_ssa synch %d %d t %f %f %d\n", ap, iter_kounter, t_synch, tau_synch, reaction_number_slow);
+				t_synch += tau_synch;
+				iter_kounter++;
+			} /* end of synch loop */
+		} /* end of nuc loop */
+		t_slow = t_synch_stop;
+	} /* end of slow loop */		
+}
+
+void integrate (MSSA_Timeclass *tc, MSSA_Problem *problem)
+{
+	if (tc->type > 1) add_bias (tc, problem);
+	for (int i = 0; i < problem->n_nucs; i++) {
+		for (int j = 0; j < problem->n_tfs; j++) {
+			fprintf(stdout, "%f ", tc->solution_protein[i * problem->n_tfs + j]);
 		}
 		fprintf(stdout, "\n");
-		t_slow += tau_slow;
-		iter_kounter++;
 	}
+	fprintf(stdout, "time %f %f mrna:\n", tc->t_start, tc->t_end); 
+	for (int i = 0; i < problem->n_nucs; i++) {
+		for (int j = 0; j < problem->n_tfs; j++) {
+			fprintf(stdout, "%f ", tc->solution_mrna[i * problem->n_tfs + j]);
+		}
+		fprintf(stdout, "\n");
+	}		
+	if (tc->type > 0) propagate (tc, problem);
+	fprintf(stdout, "time %f %f protein:\n", tc->t_start, tc->t_end); 
+	for (int i = 0; i < problem->n_nucs; i++) {
+		for (int j = 0; j < problem->n_tfs; j++) {
+			fprintf(stdout, "%f ", tc->solution_protein[i * problem->n_tfs + j]);
+		}
+		fprintf(stdout, "\n");
+	}
+	fprintf(stdout, "time %f %f mrna:\n", tc->t_start, tc->t_end); 
+	for (int i = 0; i < problem->n_nucs; i++) {
+		for (int j = 0; j < problem->n_tfs; j++) {
+			fprintf(stdout, "%f ", tc->solution_mrna[i * problem->n_tfs + j]);
+		}
+		fprintf(stdout, "\n");
+	}
+}
+
+int main(int argc, char**argv)
+{
+	printf("multiscale_ssa start\n");
+	gchar *filename = "test.file";
+	MSSA_Problem *problem = mssa_read_problem(filename);
+	printf("multiscale_ssa read problem\n");
+	printf("multiscale_ssa nnucs %d\n", problem->n_nucs);
+	printf("multiscale_ssa tfs %d\n", problem->n_tfs);
+	printf("multiscale_ssa targets %d\n", problem->n_target_genes);
+	g_list_foreach (problem->tc_list, (GFunc) integrate, (gpointer) problem);
 	return (0);
 }
