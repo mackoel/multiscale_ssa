@@ -3,15 +3,22 @@ dnl Created by Anjuta application wizard.
 
 AC_INIT(multiscale_ssa, 0.1)
 
+AM_INIT_AUTOMAKE(AC_PACKAGE_NAME, AC_PACKAGE_VERSION)
 AC_CONFIG_HEADERS([config.h])
+AM_MAINTAINER_MODE
 
-AM_INIT_AUTOMAKE([1.11])
+dnl AC_CONFIG_HEADERS([config.h])
+
+dnl AM_INIT_AUTOMAKE([1.11])
 
 dnl AM_SILENT_RULES([yes])
 
+dnl AC_PROG_CC
+
+AC_ISC_POSIX
 AC_PROG_CC
-
-
+AM_PROG_CC_STDC
+AC_HEADER_STDC
 
 
 dnl ***************************************************************************

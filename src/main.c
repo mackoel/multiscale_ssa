@@ -780,11 +780,69 @@ void integrate (MSSA_Timeclass *tc, MSSA_Problem *problem)
 	if (tc->type == 0) divide (tc, problem);
 }
 
+/*
+ * Standard gettext macros.
+*/
+#ifdef ENABLE_NLS
+#  include <libintl.h>
+#  undef _
+#  define _(String) dgettext (PACKAGE, String)
+#  ifdef gettext_noop
+#    define N_(String) gettext_noop (String)
+#  else
+#    define N_(String) (String)
+#  endif
+#else
+#  define textdomain(String) (String)
+#  define gettext(String) (String)
+#  define dgettext(Domain,Message) (Message)
+#  define dcgettext(Domain,Message,Type) (Message)
+#  define bindtextdomain(Domain,Directory) (Domain)
+#  define _(String) (String)
+#  define N_(String) (String)
+#endif
+
+static char*data_file;
+static char*log_file;
+static char*operation;
+
+static gboolean
+option_version_cb (const gchar *option_name,
+                   const gchar *value,
+                   gpointer     data,
+                   GError     **error)
+{
+  g_print ("%s %s\n", _("Multiscale SSA, version "), VERSION);
+
+  exit (0);
+  return FALSE;
+}
+
+static GOptionEntry entries[] =
+{
+	{ "datafile", 0, 0, G_OPTION_ARG_STRING, &data_file, N_("File name for everything and default group names"), N_("FILENAME") },
+	{ "logfile", 0, 0, G_OPTION_ARG_STRING, &log_file, N_("File name where model is described"), N_("FILENAME") },
+	{ "operation", 0, 0, G_OPTION_ARG_STRING, &operation, N_("What to do"), N_("OPERATION") },
+	{ "version", 0, G_OPTION_FLAG_NO_ARG | G_OPTION_FLAG_HIDDEN, G_OPTION_ARG_CALLBACK, option_version_cb, NULL, NULL },
+	{ NULL }
+};
+
 int main(int argc, char**argv)
 {
 	printf("multiscale_ssa start\n");
-	gchar *filename = "test.file";
-	MSSA_Problem *problem = mssa_read_problem(filename);
+	GOptionContext *context;
+	GError *gerror = NULL;
+	context = g_option_context_new (_("- DEEP optimizer"));
+	g_option_context_add_main_entries(context, (const GOptionEntry *)entries, NULL);
+	g_option_context_set_ignore_unknown_options(context, TRUE);
+	if (!g_option_context_parse (context, &argc, &argv, &gerror)) {
+		g_error (_("option parsing failed: %s\n"), gerror->message);
+	}
+	g_option_context_free (context);
+	if (data_file == NULL) {
+		g_error(_("%s called with wrong options for model"), g_get_prgname());
+	}
+	MSSA_Problem *problem = mssa_read_problem(data_file);
 	printf("multiscale_ssa read problem\n");
 	printf("multiscale_ssa nnucs %d\n", problem->n_nucs);
 	printf("multiscale_ssa tfs %d\n", problem->n_tfs);
