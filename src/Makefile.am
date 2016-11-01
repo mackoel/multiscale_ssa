@@ -17,6 +17,8 @@ bin_PROGRAMS = multiscale_ssa
 multiscale_ssa_SOURCES = \
 	main.c
 
+multiscale_ssa_CFLAGS = -fopenmp
+
 multiscale_ssa_LDFLAGS = -lm
 
 multiscale_ssa_LDADD = $(MULTISCALE_SSA_LIBS)

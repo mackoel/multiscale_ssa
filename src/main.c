@@ -31,6 +31,17 @@
 #define BYTESIZE 8
 
 #define SECONDS_PER_DAY 86400
+#define MAX_SYNCH_ITER 1e2
+#define MOLECULES_PER_CONCENTRATION 1e2
+#define SYNCH_STEPS_PER_SLOW 20
+#define FAST_TIME_MAX 0.50
+
+#ifdef _OPENMP
+	#include <omp.h>
+#else
+	#define omp_get_thread_num() 0
+	#define omp_get_num_threads() 1
+#endif
 
 long seed = 1;
 unsigned short ysubj[3];
@@ -153,7 +164,9 @@ void evaluate_promotor_state(int *species, int *M, int *species_promoters_indice
 typedef struct {
 	double t_start;
 	double t_end;
-	int type; /* propagate (1)/add bias (2) etc */
+	int type; /* propagate (1), add bias (2), divide (0) etc */
+	int n_nucs;
+	int kounter;
 	double *data_protein; /* a table of concentrations/molecule numbers */
 	double *solution_protein;
 	double *data_mrna; /* a table of concentrations/molecule numbers */
@@ -165,7 +178,7 @@ typedef struct {
 	int length;
 	double energy;
 	int tf_index;
-	int is_bound;
+	int status; /* bound = 1, free = 0, blocked = -1 */
 } MSSA_site;
 
 typedef struct {
@@ -206,21 +219,25 @@ MSSA_Problem *mssa_read_problem(gchar*filename)
 	fscanf(fp, "%d", &ntc);
 	fscanf(fp, "%*s");
 	problem->tc_list = NULL;
+	int kounter = 0;
 	for (int k = 0; k < ntc; k++) {
 		MSSA_Timeclass *tc = g_new(MSSA_Timeclass, 1);
-		fscanf(fp, "%d %lf %lf\n", &(tc->type), &(tc->t_start), &(tc->t_end));
+		tc->kounter = kounter++;
+		fscanf(fp, "%d %lf %lf %d\n", &(tc->type), &(tc->t_start), &(tc->t_end), &(tc->n_nucs));
 		fscanf(fp, "%*s\n");
-		tc->data_protein = g_new0(double, problem->n_nucs * problem->n_tfs);
-		tc->solution_protein = g_new0(double, problem->n_nucs * problem->n_tfs);
-		for (int i = 0; i < problem->n_nucs; i++) {
-			for (int j = 0; j < problem->n_tfs; j++) {
-				fscanf(fp, "%lf", &(tc->data_protein[i * problem->n_tfs + j]));
+		tc->data_protein = g_new0(double, tc->n_nucs * problem->n_tfs);
+		tc->solution_protein = g_new0(double, tc->n_nucs * problem->n_tfs);
+		if (tc->type > 0) {
+			for (int i = 0; i < tc->n_nucs; i++) {
+				for (int j = 0; j < problem->n_tfs; j++) {
+					fscanf(fp, "%lf", &(tc->data_protein[i * problem->n_tfs + j]));
+				}
 			}
+			fscanf(fp, "%*s");
 		}
-		tc->data_mrna = g_new0(double, problem->n_nucs * problem->n_tfs);
-		tc->solution_mrna = g_new0(double, problem->n_nucs * problem->n_tfs);
+		tc->data_mrna = g_new0(double, tc->n_nucs * problem->n_tfs);
+		tc->solution_mrna = g_new0(double, tc->n_nucs * problem->n_tfs);
 		problem->tc_list = g_list_append(problem->tc_list, tc);
-		fscanf(fp, "%*s");
 	}
 	problem->n_sites = g_new0(int, problem->n_target_genes);
 	for (int i = 0; i < problem->n_target_genes; i++) {
@@ -238,7 +255,7 @@ MSSA_Problem *mssa_read_problem(gchar*filename)
 			fscanf(fp, "%d %*c %d %*f %d %lf", &(problem->allele_0[0][i][j].coordinate), 
 			       &(problem->allele_0[0][i][j].tf_index), &(problem->allele_0[0][i][j].length), 
 			       &(problem->allele_0[0][i][j].energy));
-			problem->allele_0[0][i][j].is_bound = 0;
+			problem->allele_0[0][i][j].status = 0;
 			problem->allele_1[0][i][j] = problem->allele_0[0][i][j];
 		}
 		fscanf(fp, "%*s");
@@ -304,7 +321,7 @@ int mssa_get_reaction_fast(double *solution, MSSA_site ***allele,
 		for (j = 0; j < n_tfs; j++) {
 			double prop = 0; /* Sum of energies of free bs */
 			for (k = 0; k < n_sites[i]; k++) {
-				prop += (allele[ap][i][k].is_bound == 0 && allele[ap][i][k].tf_index == j) ? allele[ap][i][k].energy : 0;
+				prop += (allele[ap][i][k].status == 0 && allele[ap][i][k].tf_index == j) ? allele[ap][i][k].energy : 0;
 			}
 			propensity[i * n_tfs + j] = solution[ap * n_tfs + j] * prop;
 			prop_sum += propensity[i * n_tfs + j];
@@ -316,9 +333,10 @@ int mssa_get_reaction_fast(double *solution, MSSA_site ***allele,
 		for (j = 0; j < n_tfs; j++) {
 			double prop = 0; /* Sum of energies of bound bs */
 			for (k = 0; k < n_sites[i]; k++) {
-				prop += (allele[ap][i][k].is_bound == 1 && allele[ap][i][k].tf_index == j) ? allele[ap][i][k].energy : 0;
+				prop += (allele[ap][i][k].status == 1 && allele[ap][i][k].tf_index == j) ? allele[ap][i][k].energy : 0;
 			}
-			propensity[n_tfs * n_target_genes + i * n_tfs + j] = solution[ap * n_tfs + j] * prop;
+//			propensity[n_tfs * n_target_genes + i * n_tfs + j] = solution[ap * n_tfs + j] * prop;
+			propensity[n_tfs * n_target_genes + i * n_tfs + j] = prop;
 			prop_sum += propensity[n_tfs * n_target_genes + i * n_tfs + j];
 		}
 
@@ -371,9 +389,9 @@ int mssa_get_reaction_fast(double *solution, MSSA_site ***allele,
 		s = l;
 		for (k = 0; k < n_sites[(*target)]; k++) {
 			/* Looking for a bound/unbound site */
-			if (allele[ap][(*target)][s].is_bound == (1 - (*reaction_type))) {
+			if (allele[ap][(*target)][s].status == (1 - (*reaction_type))) {
 				(*site_number) = s;
-				allele[ap][(*target)][s].is_bound = (*reaction_type);
+				allele[ap][(*target)][s].status = (*reaction_type);
 				solution[ap * n_tfs + (*tf)] += ((*reaction_type) == 1) ? -1 : 1;
 				if (solution[ap * n_tfs + (*tf)] < 0) {
 					g_warning("fast reaction n %d t %d: ap %d tf %d target %d < 0", reaction_number, (*reaction_type), ap, (*tf), (*target));
@@ -417,35 +435,35 @@ int mssa_get_reaction_slow(double *solution_mrna,
 	double random = erand48(ysubj);
 	int number_of_reactions = 2 * n_target_genes + /* transcription */ 
 		n_target_genes + /* translation */
-		n_target_genes + /* degradation */
-		n_target_genes; /* degradation */ 
+		n_target_genes + /* degradation mrna */
+		n_target_genes; /* degradation protein */ 
 	propensity = g_new0(double, number_of_reactions);
 	probability = g_new0(double, number_of_reactions);
 /* transcription */
 	for (i = 0; i < n_target_genes; i++) {
-		double prop = 1; /* Product of T of bound bs */
+		double prop = 0; /* Product of T of bound bs */
 		int zero = 1;
 		for (k = 0; k < n_sites[i]; k++) {
-			if (allele_0[ap][i][k].is_bound == 1) {
-				prop *= T[i * n_tfs + allele_0[ap][i][k].tf_index];
+			if (allele_0[ap][i][k].status == 1) {
+				prop += T[i * n_tfs + allele_0[ap][i][k].tf_index];
 				zero = 0;
 			}
 			
 		}
-		propensity[i] = (zero == 0) ? prop : 0;
+		propensity[i] = (zero == 0) ? exp(prop) : 0;
 		prop_sum += propensity[i];
 	}
 	for (i = 0; i < n_target_genes; i++) {
-		double prop = 1; /* Product of T of bound bs */
+		double prop = 0; /* Product of T of bound bs */
 		int zero = 1;
 		for (k = 0; k < n_sites[i]; k++) {
-			if (allele_1[ap][i][k].is_bound == 1) {
-				prop *= T[i * n_tfs + allele_1[ap][i][k].tf_index];
+			if (allele_1[ap][i][k].status == 1) {
+				prop += T[i * n_tfs + allele_1[ap][i][k].tf_index];
 				zero = 0;
 			}
 			
 		}
-		propensity[n_target_genes + i] = (zero == 0) ? prop : 0;
+		propensity[n_target_genes + i] = (zero == 0) ? exp(prop) : 0;
 		prop_sum += propensity[n_target_genes + i];
 	}
 /* translation */
@@ -556,7 +574,7 @@ int mssa_get_reaction_slow(double *solution_mrna,
 			solution_mrna[ap * n_tfs + k]--;
 			if (solution_mrna[ap * n_tfs + k] < 0) {
 				g_warning("slow mrna: ap %d tf %d < 0", ap, k);
-				solution_protein[ap * n_tfs + k] = 0;
+				solution_mrna[ap * n_tfs + k] = 0;
 			}
 		break;
 		case 5:
@@ -573,44 +591,64 @@ int mssa_get_reaction_slow(double *solution_mrna,
 	return (reaction_number);
 }
 
+void mssa_print_timeclass (MSSA_Timeclass *tc, MSSA_Problem *problem)
+{
+	fprintf(stdout, "time %f %f protein:\n", tc->t_start, tc->t_end); 
+	for (int i = 0; i < tc->n_nucs; i++) {
+		for (int j = 0; j < problem->n_tfs; j++) {
+			fprintf(stdout, "%f ", tc->solution_protein[i * problem->n_tfs + j]);
+		}
+		fprintf(stdout, "\n");
+	}
+	fprintf(stdout, "time %f %f mrna:\n", tc->t_start, tc->t_end); 
+	for (int i = 0; i < tc->n_nucs; i++) {
+		for (int j = 0; j < problem->n_tfs; j++) {
+			fprintf(stdout, "%f ", tc->solution_mrna[i * problem->n_tfs + j]);
+		}
+		fprintf(stdout, "\n");
+	}
+}
+
 void add_bias (MSSA_Timeclass *tc, MSSA_Problem *problem)
 {
-	printf("multiscale_ssa add bias\n");
-	for (int i = 0; i < problem->n_nucs; i++) {
+	printf("multiscale_ssa add bias %d\n", tc->kounter);
+	for (int i = 0; i < tc->n_nucs; i++) {
 		for (int j = 0; j < problem->n_tfs; j++) {
-			tc->solution_mrna[i * problem->n_tfs + j] = tc->data_mrna[i * problem->n_tfs + j];
-			tc->solution_protein[i * problem->n_tfs + j] = tc->data_protein[i * problem->n_tfs + j];
+			tc->solution_mrna[i * problem->n_tfs + j] += tc->data_mrna[i * problem->n_tfs + j];
+			tc->solution_protein[i * problem->n_tfs + j] += tc->data_protein[i * problem->n_tfs + j] * MOLECULES_PER_CONCENTRATION;
 		}
 	}
+	mssa_print_timeclass (tc, problem);
 }
 
 void propagate (MSSA_Timeclass *tc, MSSA_Problem *problem)
 {
-	printf("multiscale_ssa propagate\n");
+	printf("multiscale_ssa propagate %d\n", tc->kounter);
 	double t_start_slow;
 	double t_stop_slow;
-	double t_start_fast;
-	double t_stop_fast;
-	int iter_kounter;
-	double t_slow, t_fast;
+	double t_slow;
 /* Set simulation time */
 	t_start_slow = tc->t_start;
 	t_stop_slow = tc->t_end;
-	t_start_fast = 0;
-	t_stop_fast = 0.050;
-/* Simualte */
-	iter_kounter = 0;
+/* Simulate */
+	int iter_kounter = 0;
 	t_slow = t_start_slow;
 	while (t_slow < t_stop_slow) {
 		double t_synch_start = t_slow;
-		double t_synch_stop = t_slow + (t_stop_slow - t_start_slow) / 1;
-		for (int ap = 0; ap < problem->n_nucs; ap++) {
+		double t_synch_stop = t_slow + (t_stop_slow - t_start_slow) / SYNCH_STEPS_PER_SLOW;
+#pragma omp parallel for schedule(static) default(none) shared(problem, tc, t_synch_start, t_synch_stop)
+		for (int ap = 0; ap < tc->n_nucs; ap++) {
 			double t_synch = t_synch_start;
-			iter_kounter = 0;
-			while (t_synch < t_synch_stop && iter_kounter < 1e2) {
+			int synch_iter_kounter = 0;
+			while (t_synch < t_synch_stop && synch_iter_kounter < MAX_SYNCH_ITER) {
 				double tau_synch;
 				int reaction_number_slow, inner_iter_kounter;
 				int reaction_type_slow, promoter_number_slow;
+				double t_start_fast;
+				double t_stop_fast;
+				double t_fast;
+				t_start_fast = 0;
+				t_stop_fast = FAST_TIME_MAX;
 				/* Allele_0 */
 				t_fast = t_start_fast;
 				inner_iter_kounter = 0;
@@ -663,46 +701,83 @@ void propagate (MSSA_Timeclass *tc, MSSA_Problem *problem)
 				                                              problem->n_tfs, 
 				                                              problem->n_target_genes, 
 				                                              ap);
-				printf("multiscale_ssa synch %d %d t %f %f %d\n", ap, iter_kounter, t_synch, tau_synch, reaction_number_slow);
+				printf("multiscale_ssa synch %d %d t %f %f %d %d fast %d\n", ap, synch_iter_kounter, t_synch, tau_synch, reaction_number_slow, reaction_type_slow, inner_iter_kounter);
 				t_synch += tau_synch;
-				iter_kounter++;
+				synch_iter_kounter++;
 			} /* end of synch loop */
 		} /* end of nuc loop */
 		t_slow = t_synch_stop;
-	} /* end of slow loop */		
+	} /* end of slow loop */
+	mssa_print_timeclass (tc, problem);
+}
+
+void divide (MSSA_Timeclass *tc, MSSA_Problem *problem)
+{
+	printf("multiscale_ssa divide %d\n", tc->kounter);
+	MSSA_Timeclass *tc_prev = (MSSA_Timeclass *) g_list_nth_data (problem->tc_list, (tc->kounter - 1));
+	if (!tc_prev) return;
+	if (tc->n_nucs > tc_prev->n_nucs * 2) {
+		int i = 0;
+		for (int j = 0; j < problem->n_tfs; j++) {
+			tc->solution_mrna[2 * i * problem->n_tfs + j] = tc_prev->solution_mrna[i * problem->n_tfs + j] / 2;
+			tc->solution_protein[2 * i * problem->n_tfs + j] = tc_prev->solution_protein[i * problem->n_tfs + j] / 2;
+		}
+		for (int i = 1; i < tc_prev->n_nucs - 1; i++) {
+			for (int j = 0; j < problem->n_tfs; j++) {
+				tc->solution_mrna[2 * i * problem->n_tfs + j] = tc_prev->solution_mrna[i * problem->n_tfs + j] / 2;
+				tc->solution_mrna[(2 * i + 1) * problem->n_tfs + j] = tc_prev->solution_mrna[i * problem->n_tfs + j] / 2;
+				tc->solution_protein[2 * i * problem->n_tfs + j] = tc_prev->solution_protein[i * problem->n_tfs + j] / 2;
+				tc->solution_protein[(2 * i + 1) * problem->n_tfs + j] = tc_prev->solution_protein[i * problem->n_tfs + j] / 2;
+			}
+		}
+		i = tc_prev->n_nucs - 1;
+		for (int j = 0; j < problem->n_tfs; j++) {
+			tc->solution_mrna[(2 * i + 1) * problem->n_tfs + j] = tc_prev->solution_mrna[i * problem->n_tfs + j] / 2;
+			tc->solution_protein[(2 * i + 1) * problem->n_tfs + j] = tc_prev->solution_protein[i * problem->n_tfs + j] / 2;
+		}
+	} else {
+		for (int i = 0; i < tc_prev->n_nucs; i++) {
+			for (int j = 0; j < problem->n_tfs; j++) {
+				tc->solution_mrna[2 * i * problem->n_tfs + j] = tc_prev->solution_mrna[i * problem->n_tfs + j] / 2;
+				tc->solution_mrna[(2 * i + 1) * problem->n_tfs + j] = tc_prev->solution_mrna[i * problem->n_tfs + j] / 2;
+				tc->solution_protein[2 * i * problem->n_tfs + j] = tc_prev->solution_protein[i * problem->n_tfs + j] / 2;
+				tc->solution_protein[(2 * i + 1) * problem->n_tfs + j] = tc_prev->solution_protein[i * problem->n_tfs + j] / 2;
+			}
+		}
+	}
+	for(int k = 1; k < problem->n_nucs; k++) {
+		for (int i = 0; i < problem->n_target_genes; i++) {
+			for (int j = 0; j < problem->n_sites[i]; j++) {
+				problem->allele_0[k][i][j].status = 0;
+				problem->allele_1[k][i][j].status = 0;
+			}
+		}
+	}
+	mssa_print_timeclass (tc, problem);
+}
+
+void connect (MSSA_Timeclass *tc, MSSA_Problem *problem)
+{
+	printf("multiscale_ssa connect %d\n", tc->kounter);
+	MSSA_Timeclass *tc_prev = (MSSA_Timeclass *) g_list_nth_data (problem->tc_list, (tc->kounter - 1));
+	if (!tc_prev) return;
+	for (int i = 0; i < tc_prev->n_nucs; i++) {
+		for (int j = 0; j < problem->n_tfs; j++) {
+			tc->solution_mrna[i * problem->n_tfs + j] = tc_prev->solution_mrna[i * problem->n_tfs + j];
+			tc->solution_protein[i * problem->n_tfs + j] = tc_prev->solution_protein[i * problem->n_tfs + j];
+		}
+	}
+	mssa_print_timeclass (tc, problem);
 }
 
 void integrate (MSSA_Timeclass *tc, MSSA_Problem *problem)
 {
+	printf("multiscale_ssa integrate %d\n", tc->kounter);
+	if (tc->kounter == 0) mssa_print_timeclass (tc, problem);
+	if (tc->type > 0) connect (tc, problem);
 	if (tc->type > 1) add_bias (tc, problem);
-	for (int i = 0; i < problem->n_nucs; i++) {
-		for (int j = 0; j < problem->n_tfs; j++) {
-			fprintf(stdout, "%f ", tc->solution_protein[i * problem->n_tfs + j]);
-		}
-		fprintf(stdout, "\n");
-	}
-	fprintf(stdout, "time %f %f mrna:\n", tc->t_start, tc->t_end); 
-	for (int i = 0; i < problem->n_nucs; i++) {
-		for (int j = 0; j < problem->n_tfs; j++) {
-			fprintf(stdout, "%f ", tc->solution_mrna[i * problem->n_tfs + j]);
-		}
-		fprintf(stdout, "\n");
-	}		
 	if (tc->type > 0) propagate (tc, problem);
-	fprintf(stdout, "time %f %f protein:\n", tc->t_start, tc->t_end); 
-	for (int i = 0; i < problem->n_nucs; i++) {
-		for (int j = 0; j < problem->n_tfs; j++) {
-			fprintf(stdout, "%f ", tc->solution_protein[i * problem->n_tfs + j]);
-		}
-		fprintf(stdout, "\n");
-	}
-	fprintf(stdout, "time %f %f mrna:\n", tc->t_start, tc->t_end); 
-	for (int i = 0; i < problem->n_nucs; i++) {
-		for (int j = 0; j < problem->n_tfs; j++) {
-			fprintf(stdout, "%f ", tc->solution_mrna[i * problem->n_tfs + j]);
-		}
-		fprintf(stdout, "\n");
-	}
+	if (tc->type == 0) divide (tc, problem);
 }
 
 int main(int argc, char**argv)
