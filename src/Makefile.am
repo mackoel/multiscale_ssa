@@ -6,6 +6,7 @@ AM_CPPFLAGS = \
 	-DPACKAGE_LOCALE_DIR=\""$(localedir)"\" \
 	-DPACKAGE_SRC_DIR=\""$(srcdir)"\" \
 	-DPACKAGE_DATA_DIR=\""$(pkgdatadir)"\" \
+	-DVERSION=\""$(VERSION)"\" \
 	$(MULTISCALE_SSA_CFLAGS)
 
 AM_CFLAGS =\
