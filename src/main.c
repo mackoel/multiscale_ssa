@@ -356,7 +356,7 @@ int mssa_get_reaction_fast(double *solution,
 				prop += (allele[ap][i][k].status == 1 && allele[ap][i][k].tf_index == j) ? allele[ap][i][k].energy : 0;
 			}
 //			propensity[n_tfs * n_target_genes + i * n_tfs + j] = solution[ap * n_tfs + j] * prop;
-			propensity[n_tfs * n_target_genes + i * n_tfs + j] = prop;
+			propensity[n_tfs * n_target_genes + i * n_tfs + j] = bound[ap * n_tfs + j] * prop;
 			prop_sum += propensity[n_tfs * n_target_genes + i * n_tfs + j];
 		}
 
