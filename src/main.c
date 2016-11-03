@@ -657,7 +657,7 @@ void add_bias (MSSA_Timeclass *tc, MSSA_Problem *problem)
 
 void score (MSSA_Timeclass *tc, MSSA_Problem *problem)
 {
-	printf("multiscale_ssa score %d", tc->kounter);
+	printf("multiscale_ssa score %d\n", tc->kounter);
 	double score = 0;
 	for (int i = 0; i < tc->n_nucs; i++) {
 		for (int j = 0; j < problem->n_target_genes; j++) {
@@ -666,7 +666,7 @@ void score (MSSA_Timeclass *tc, MSSA_Problem *problem)
 			score += difference * difference;
 		}
 	}
-	printf("multiscale_ssa score %d=%15.6f", tc->kounter, score);
+	printf("multiscale_ssa %d score=%15.6f\n", tc->kounter, score);
 }
 
 void propagate (MSSA_Timeclass *tc, MSSA_Problem *problem)
@@ -850,6 +850,14 @@ void unbound (MSSA_Timeclass *tc, MSSA_Problem *problem)
 			tc->bound_protein[i * problem->n_tfs + j] = 0;
 		}
 	}
+	for(int k = 1; k < problem->n_nucs; k++) {
+		for (int i = 0; i < problem->n_target_genes; i++) {
+			for (int j = 0; j < problem->n_sites[i]; j++) {
+				problem->allele_0[k][i][j].status = 0;
+				problem->allele_1[k][i][j].status = 0;
+			}
+		}
+	}
 	mssa_print_timeclass (tc, problem);
 }
 
@@ -888,14 +896,6 @@ void divide (MSSA_Timeclass *tc, MSSA_Problem *problem)
 				tc->solution_mrna[(2 * i + 1) * problem->n_tfs + j] = tc_prev->solution_mrna[i * problem->n_tfs + j] / 2;
 				tc->solution_protein[2 * i * problem->n_tfs + j] = tc_prev->solution_protein[i * problem->n_tfs + j] / 2;
 				tc->solution_protein[(2 * i + 1) * problem->n_tfs + j] = tc_prev->solution_protein[i * problem->n_tfs + j] / 2;
-			}
-		}
-	}
-	for(int k = 1; k < problem->n_nucs; k++) {
-		for (int i = 0; i < problem->n_target_genes; i++) {
-			for (int j = 0; j < problem->n_sites[i]; j++) {
-				problem->allele_0[k][i][j].status = 0;
-				problem->allele_1[k][i][j].status = 0;
 			}
 		}
 	}
