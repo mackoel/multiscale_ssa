@@ -186,6 +186,8 @@ typedef struct {
 	double *protein_degradation; /* n_target_genes length */
 	double *mrna_degradation; /* n_target_genes length */
 	double *translation;
+	double *transport_mrna;
+	double *transport_protein;
 } MSSA_Parameters;
 
 typedef struct {
@@ -289,6 +291,8 @@ MSSA_Problem *mssa_read_problem(gchar*filename)
 	problem->parameters->protein_degradation = g_new0(double, problem->n_target_genes);
 	problem->parameters->mrna_degradation = g_new0(double, problem->n_target_genes);
 	problem->parameters->translation = g_new0(double, problem->n_target_genes);
+	problem->parameters->transport_mrna = g_new0(double, problem->n_target_genes);
+	problem->parameters->transport_protein = g_new0(double, problem->n_target_genes);
 	for (int i = 0; i < problem->n_target_genes; i++) {
 		for (int j = 0; j < problem->n_tfs; j++) {
 			fscanf(fp, "%lf", &(problem->parameters->T[i * problem->n_tfs + j]));
@@ -296,6 +300,8 @@ MSSA_Problem *mssa_read_problem(gchar*filename)
 		fscanf(fp, "%lf", &(problem->parameters->translation[i]));
 		fscanf(fp, "%lf", &(problem->parameters->protein_degradation[i]));
 		fscanf(fp, "%lf", &(problem->parameters->mrna_degradation[i]));
+		fscanf(fp, "%lf", &(problem->parameters->transport_mrna[i]));
+		fscanf(fp, "%lf", &(problem->parameters->transport_protein[i]));
 	}
 	return(problem);
 }
@@ -617,6 +623,403 @@ int mssa_get_reaction_slow(double *solution_mrna,
 	return (reaction_number);
 }
 
+int mssa_get_reaction_slow_with_transport(double *solution_mrna, 
+                                          double *solution_protein, 
+                                          MSSA_site ***allele_0, 
+                                          MSSA_site ***allele_1,
+                                          double *tau, 
+                                          int *reaction_type, 
+                                          int *target, 
+                                          int *nuc,
+                                          int *target_gene_index,
+                                          int *n_sites, 
+                                          double *propensity,
+                                          double *probability,
+                                          int number_of_reactions_per_nuc,
+                                          int number_of_reactions,
+                                          double *T, 
+                                          double *protein_degradation, 
+                                          double *mrna_degradation, 
+                                          double *translation,
+                                          double *transport_mrna,
+                                          double *transport_protein,
+                                          int n_tfs, 
+                                          int n_target_genes,
+                                          int n_nucs,
+                                          int interphase)
+{
+	int i, k, reaction_number, ap;
+	int reaction_index; /* local reaction type */
+	int reaction_target; /* local reaction target */
+	int reaction_nuc; /* local reaction ap */
+	int found = 0;
+	double aggregate;
+	double prop_sum = 0;
+	double random = g_rand_double (grand);
+	if (interphase == 1) {
+#pragma omp parallel for collapse(2) schedule(static) default(none) shared(n_nucs, n_target_genes, number_of_reactions_per_nuc, T, translation, solution_mrna, n_tfs, allele_0, allele_1, n_sites, propensity, target_gene_index) reduction(+:prop_sum)
+		for (ap = 0; ap < n_nucs; ap++) {
+			for (i = 0; i < n_target_genes; i++) {
+/* transcription */
+				int reaction_number = ap * number_of_reactions_per_nuc + i;
+				double prop = 0; /* Product of T of bound bs */
+				int zero = 1; /* flag */
+		/* Allele_0 */
+				for (int k = 0; k < n_sites[i]; k++) {
+					if (allele_0[ap][i][k].status == 1) {
+						prop += T[i * n_tfs + allele_0[ap][i][k].tf_index];
+						zero = 0;
+					}
+
+				}
+				propensity[reaction_number] = (zero == 0) ? exp(prop) : 0;
+				prop_sum += propensity[reaction_number];
+		/* Allele_1 */
+				reaction_number = ap * number_of_reactions_per_nuc + n_target_genes + i;
+				prop = 0; /* Product of T of bound bs */
+				zero = 1; /* flag */
+				for (int k = 0; k < n_sites[i]; k++) {
+					if (allele_1[ap][i][k].status == 1) {
+						prop += T[i * n_tfs + allele_1[ap][i][k].tf_index];
+						zero = 0;
+					}
+
+				}
+				propensity[reaction_number] = (zero == 0) ? exp(prop) : 0;
+				prop_sum += propensity[reaction_number];
+/* translation */
+				reaction_number = ap * number_of_reactions_per_nuc + 2 * n_target_genes + i;
+				int k = target_gene_index[i];
+				propensity[reaction_number] = solution_mrna[ap * n_tfs + k] * translation[i];
+				prop_sum += propensity[reaction_number];
+			}
+		}
+	}
+#pragma omp parallel for collapse(2) schedule(static) default(none) shared(solution_mrna, solution_protein, n_nucs, n_target_genes, number_of_reactions_per_nuc, n_tfs, target_gene_index, n_sites, propensity, mrna_degradation, protein_degradation) reduction(+:prop_sum)
+	for (ap = 0; ap < n_nucs; ap++) {
+		for (i = 0; i < n_target_genes; i++) {
+			int reaction_number = ap * number_of_reactions_per_nuc + 3 * n_target_genes + i;
+/* mrna degradation */
+			int k = target_gene_index[i];
+			propensity[reaction_number] = solution_mrna[ap * n_tfs + k] * mrna_degradation[i];
+			prop_sum += propensity[reaction_number];
+			reaction_number = ap * number_of_reactions_per_nuc + 4 * n_target_genes + i;
+/* protein degradation */
+			k = target_gene_index[i];
+			propensity[reaction_number] = solution_protein[ap * n_tfs + k] * protein_degradation[i];
+			prop_sum += propensity[reaction_number];
+		}
+	}
+/* transport */
+	ap = 0;
+	for (i = 0; i < n_target_genes; i++) {
+/* right mrna*/
+		reaction_number = ap * number_of_reactions_per_nuc + 6 * n_target_genes + i;
+		int k = target_gene_index[i];
+		propensity[reaction_number] = (solution_mrna[(ap + 1) * n_tfs + k] - solution_mrna[ap * n_tfs + k]) * transport_mrna[i];
+		prop_sum += propensity[reaction_number];
+/* right protein */
+		reaction_number = ap * number_of_reactions_per_nuc + 8 * n_target_genes + i;
+		k = target_gene_index[i];
+		propensity[reaction_number] = (solution_protein[(ap + 1) * n_tfs + k] - solution_protein[ap * n_tfs + k]) * transport_protein[i];
+		prop_sum += propensity[reaction_number];
+	}
+#pragma omp parallel for collapse(2) schedule(static) default(none) shared(transport_mrna, transport_protein, solution_mrna, solution_protein, n_nucs, n_target_genes, number_of_reactions_per_nuc, n_tfs, target_gene_index, n_sites, propensity, mrna_degradation, protein_degradation) reduction(+:prop_sum)
+	for (ap = 1; ap < n_nucs - 1; ap++) {
+		for (i = 0; i < n_target_genes; i++) {
+/* left mrna*/
+			int reaction_number = ap * number_of_reactions_per_nuc + 5 * n_target_genes + i;
+			int k = target_gene_index[i];
+			propensity[reaction_number] = (solution_mrna[(ap - 1) * n_tfs + k] - solution_mrna[ap * n_tfs + k]) * transport_mrna[i];
+			prop_sum += propensity[reaction_number];
+/* right mrna*/
+			reaction_number = ap * number_of_reactions_per_nuc + 6 * n_target_genes + i;
+			k = target_gene_index[i];
+			propensity[reaction_number] = (solution_mrna[(ap + 1) * n_tfs + k] - solution_mrna[ap * n_tfs + k]) * transport_mrna[i];
+			prop_sum += propensity[reaction_number];
+/* left protein */
+			reaction_number = ap * number_of_reactions_per_nuc + 7 * n_target_genes + i;
+			k = target_gene_index[i];
+			propensity[reaction_number] = (solution_protein[(ap - 1) * n_tfs + k] - solution_protein[ap * n_tfs + k]) * transport_protein[i];
+			prop_sum += propensity[reaction_number];
+/* right protein */
+			reaction_number = ap * number_of_reactions_per_nuc + 8 * n_target_genes + i;
+			k = target_gene_index[i];
+			propensity[reaction_number] = (solution_protein[(ap + 1) * n_tfs + k] - solution_protein[ap * n_tfs + k]) * transport_protein[i];
+			prop_sum += propensity[reaction_number];
+		}
+	}
+	ap = n_nucs - 1;
+	for (i = 0; i < n_target_genes; i++) {
+/* right mrna*/
+		reaction_number = ap * number_of_reactions_per_nuc + 5 * n_target_genes + i;
+		int k = target_gene_index[i];
+		propensity[reaction_number] = (solution_mrna[(ap - 1) * n_tfs + k] - solution_mrna[ap * n_tfs + k]) * transport_mrna[i];
+		prop_sum += propensity[reaction_number];
+/* right protein */
+		reaction_number = ap * number_of_reactions_per_nuc + 7 * n_target_genes + i;
+		k = target_gene_index[i];
+		propensity[reaction_number] = (solution_protein[(ap - 1) * n_tfs + k] - solution_protein[ap * n_tfs + k]) * transport_protein[i];
+		prop_sum += propensity[reaction_number];
+	}
+	if (prop_sum <= 0.00000000001) {
+		g_warning("slow Sum of propensities is too small %g!", prop_sum); 
+		(*tau) = TMAX;
+		g_free(propensity);
+		g_free(probability);
+		return(-1);
+	}
+	found = 0;
+	aggregate = 0;
+	if (interphase == 1) {
+		for (ap = 0; ap < n_nucs; ap++) {
+			for (i = 0; i < n_target_genes; i++) {
+/* transcription 1 */
+				reaction_number = ap * number_of_reactions_per_nuc + i;
+				aggregate += propensity[reaction_number];
+				probability[reaction_number] = aggregate / prop_sum;
+				if (random < probability[reaction_number]) {
+					reaction_nuc = ap;
+					reaction_target = i;
+					reaction_index = 1;
+					found = 1;
+					break;
+				}
+/* transcription 2 */
+				reaction_number = ap * number_of_reactions_per_nuc + n_target_genes + i;
+				aggregate += propensity[reaction_number];
+				probability[reaction_number] = aggregate / prop_sum;
+				if (random < probability[reaction_number]) {
+					reaction_nuc = ap;
+					reaction_target = i;
+					reaction_index = 2;
+					found = 1;
+					break;
+				}
+/* translation */
+				reaction_number = ap * number_of_reactions_per_nuc + 2 * n_target_genes + i;
+				aggregate += propensity[reaction_number];
+				probability[reaction_number] = aggregate / prop_sum;
+				if (random < probability[reaction_number]) {
+					reaction_nuc = ap;
+					reaction_target = i;
+					reaction_index = 3;
+					found = 1;
+					break;
+				}
+			}
+			if (found == 1) {
+				break;
+			}
+		}
+	}
+	if (found == 0) {
+		for (ap = 0; ap < n_nucs; ap++) {
+			for (i = 0; i < n_target_genes; i++) {
+/* mrna degradation */
+				reaction_number = ap * number_of_reactions_per_nuc + 3 * n_target_genes + i;
+				aggregate += propensity[reaction_number];
+				probability[reaction_number] = aggregate / prop_sum;
+				if (random < probability[reaction_number]) {
+					reaction_nuc = ap;
+					reaction_target = i;
+					reaction_index = 4;
+					found = 1;
+					break;
+				}
+/* protein degradation */
+				reaction_number = ap * number_of_reactions_per_nuc + 4 * n_target_genes + i;
+				aggregate += propensity[reaction_number];
+				probability[reaction_number] = aggregate / prop_sum;
+				if (random < probability[reaction_number]) {
+					reaction_nuc = ap;
+					reaction_target = i;
+					reaction_index = 5;
+					found = 1;
+					break;
+				}
+			}
+			if (found == 1) {
+				break;
+			}
+		}
+	}
+	if (found == 0) {
+		ap = 0;
+		for (i = 0; i < n_target_genes; i++) {
+/* right mrna*/
+			reaction_number = ap * number_of_reactions_per_nuc + 6 * n_target_genes + i;
+			aggregate += propensity[reaction_number];
+			probability[reaction_number] = aggregate / prop_sum;
+			if (random < probability[reaction_number]) {
+				reaction_nuc = ap;
+				reaction_target = i;
+				reaction_index = 7;
+				found = 1;
+				break;
+			}
+/* right protein */
+			reaction_number = ap * number_of_reactions_per_nuc + 8 * n_target_genes + i;
+			aggregate += propensity[reaction_number];
+			probability[reaction_number] = aggregate / prop_sum;
+			if (random < probability[reaction_number]) {
+				reaction_nuc = ap;
+				reaction_target = i;
+				reaction_index = 9;
+				found = 1;
+				break;
+			}
+		}
+		if (found == 0) {
+			for (ap = 1; ap < n_nucs - 1; ap++) {
+				for (i = 0; i < n_target_genes; i++) {
+					/* left mrna*/
+					reaction_number = ap * number_of_reactions_per_nuc + 5 * n_target_genes + i;
+					aggregate += propensity[reaction_number];
+					probability[reaction_number] = aggregate / prop_sum;
+					if (random < probability[reaction_number]) {
+						reaction_nuc = ap;
+						reaction_target = i;
+						reaction_index = 6;
+						found = 1;
+						break;
+					}
+					/* right mrna*/
+					reaction_number = ap * number_of_reactions_per_nuc + 6 * n_target_genes + i;
+					aggregate += propensity[reaction_number];
+					probability[reaction_number] = aggregate / prop_sum;
+					if (random < probability[reaction_number]) {
+						reaction_nuc = ap;
+						reaction_target = i;
+						reaction_index = 7;
+						found = 1;
+						break;
+					}
+					/* left protein */
+					reaction_number = ap * number_of_reactions_per_nuc + 7 * n_target_genes + i;
+					aggregate += propensity[reaction_number];
+					probability[reaction_number] = aggregate / prop_sum;
+					if (random < probability[reaction_number]) {
+						reaction_nuc = ap;
+						reaction_target = i;
+						reaction_index = 8;
+						found = 1;
+						break;
+					}
+					/* right protein */
+					reaction_number = ap * number_of_reactions_per_nuc + 8 * n_target_genes + i;
+					aggregate += propensity[reaction_number];
+					probability[reaction_number] = aggregate / prop_sum;
+					if (random < probability[reaction_number]) {
+						reaction_nuc = ap;
+						reaction_target = i;
+						reaction_index = 9;
+						found = 1;
+						break;
+					}
+				}
+				if (found == 1) {
+					break;
+				}
+			}
+		}
+		if (found == 0) {
+			ap = n_nucs - 1;
+			for (i = 0; i < n_target_genes; i++) {
+				/* right mrna*/
+				reaction_number = ap * number_of_reactions_per_nuc + 5 * n_target_genes + i;
+				aggregate += propensity[reaction_number];
+				probability[reaction_number] = aggregate / prop_sum;
+				if (random < probability[reaction_number]) {
+					reaction_nuc = ap;
+					reaction_target = i;
+					reaction_index = 6;
+					found = 1;
+					break;
+				}
+				/* right protein */
+				reaction_number = ap * number_of_reactions_per_nuc + 7 * n_target_genes + i;
+				aggregate += propensity[reaction_number];
+				probability[reaction_number] = aggregate / prop_sum;
+				if (random < probability[reaction_number]) {
+					reaction_nuc = ap;
+					reaction_target = i;
+					reaction_index = 8;
+					found = 1;
+					break;
+				}
+			}
+		}
+	}
+	(*tau) = -log(g_rand_double (grand)) / prop_sum;
+	switch (reaction_index) {
+		case 1: /* transcription 1 */
+			k = target_gene_index[reaction_target];
+			solution_mrna[reaction_nuc * n_tfs + k]++;
+		break;
+		case 2: /* transcription 2 */
+			k = target_gene_index[reaction_target];
+			solution_mrna[reaction_nuc * n_tfs + k]++;
+		break;
+		case 3: /* translation */
+			k = target_gene_index[reaction_target];
+			solution_protein[reaction_nuc * n_tfs + k]++;
+		break;
+		case 4: /* mrna degradation */
+			k = target_gene_index[reaction_target];
+			solution_mrna[reaction_nuc * n_tfs + k]--;
+			if (solution_mrna[reaction_nuc * n_tfs + k] < 0) {
+				g_warning("slow mrna: ap %d tf %d < 0", ap, k);
+				solution_mrna[reaction_nuc * n_tfs + k] = 0;
+			}
+		break;
+		case 5: /* protein degradation */
+			k = target_gene_index[reaction_target];
+			solution_protein[reaction_nuc * n_tfs + k]--;
+			if (solution_protein[reaction_nuc * n_tfs + k] < 0) {
+				g_warning("slow prot: ap %d tf %d < 0", ap, k);
+				solution_protein[reaction_nuc * n_tfs + k] = 0;
+			}
+		case 6: /* left transport mrna */
+			k = target_gene_index[reaction_target];
+			solution_mrna[(reaction_nuc - 1) * n_tfs + k]--;
+			solution_mrna[reaction_nuc * n_tfs + k]++;
+			if (solution_mrna[(reaction_nuc - 1) * n_tfs + k] < 0) {
+				g_warning("slow prot: ap %d tf %d < 0", ap, k);
+				solution_mrna[(reaction_nuc - 1) * n_tfs + k] = 0;
+			}
+		case 7: /* right transport mrna */
+			k = target_gene_index[reaction_target];
+			solution_mrna[(reaction_nuc + 1) * n_tfs + k]--;
+			solution_mrna[reaction_nuc * n_tfs + k]++;
+			if (solution_mrna[(reaction_nuc + 1) * n_tfs + k] < 0) {
+				g_warning("slow prot: ap %d tf %d < 0", ap, k);
+				solution_mrna[(reaction_nuc + 1) * n_tfs + k] = 0;
+			}
+		case 8: /* left transport protein */
+			k = target_gene_index[reaction_target];
+			solution_protein[(reaction_nuc - 1) * n_tfs + k]--;
+			solution_protein[reaction_nuc * n_tfs + k]++;
+			if (solution_protein[(reaction_nuc - 1) * n_tfs + k] < 0) {
+				g_warning("slow prot: ap %d tf %d < 0", ap, k);
+				solution_protein[(reaction_nuc - 1) * n_tfs + k] = 0;
+			}
+		case 9: /* right transport protein */
+			k = target_gene_index[reaction_target];
+			solution_protein[(reaction_nuc + 1) * n_tfs + k]--;
+			solution_protein[reaction_nuc * n_tfs + k]++;
+			if (solution_protein[(reaction_nuc + 1) * n_tfs + k] < 0) {
+				g_warning("slow prot: ap %d tf %d < 0", ap, k);
+				solution_protein[(reaction_nuc + 1) * n_tfs + k] = 0;
+			}
+		break;
+	}
+	(*target) = reaction_target;
+	(*reaction_type) = reaction_index;
+	(*nuc) = reaction_nuc;
+	return (reaction_number);
+}
+
 void mssa_print_timeclass (MSSA_Timeclass *tc, MSSA_Problem *problem)
 {
 	fprintf(stdout, "time %f %f protein:\n", tc->t_start, tc->t_end); 
@@ -821,6 +1224,130 @@ void propagate_slow_only (MSSA_Timeclass *tc, MSSA_Problem *problem)
 		} /* end of nuc loop */
 		t_slow = t_synch_stop;
 	} /* end of slow loop */
+	mssa_print_timeclass (tc, problem);
+}
+
+void propagate_with_transport (MSSA_Timeclass *tc, MSSA_Problem *problem)
+{
+	printf("multiscale_ssa propagate %d\n", tc->kounter);
+	double t_start_slow;
+	double t_stop_slow;
+	double t_slow, tau_slow;
+	double *propensity;
+	double *probability;
+	int number_of_reactions_per_nuc;
+	int number_of_reactions;
+	number_of_reactions_per_nuc = 2 * problem->n_target_genes + /* transcription */ 
+		problem->n_target_genes + /* translation */
+		problem->n_target_genes + /* degradation mrna */
+		problem->n_target_genes + /* degradation protein */
+		problem->n_target_genes + /* left transport mrna */
+		problem->n_target_genes + /* right transport mrna */
+		problem->n_target_genes + /* left transport protein */
+		problem->n_target_genes; /* right transport protein */
+	number_of_reactions = number_of_reactions_per_nuc * tc->n_nucs - 4 * problem->n_target_genes;
+	int slow_only = (tc->type == 3) ? 1 : 0;
+	propensity = g_new0(double, number_of_reactions);
+	probability = g_new0(double, number_of_reactions);	
+/* Set simulation time */
+	t_start_slow = tc->t_start;
+	t_stop_slow = tc->t_end;
+/* Simulate */
+	int iter_kounter = 0;
+	t_slow = t_start_slow;
+	while (t_slow < t_stop_slow) {
+		int reaction_number_slow, inner_iter_kounter;
+		int reaction_type_slow, promoter_number_slow;
+		int nuc_number_slow;
+		if (slow_only == 0) { /* interphase */
+#pragma omp parallel for schedule(static) default(none) shared(problem, tc) reduction(+:inner_iter_kounter)
+			for (int ap = 0; ap < tc->n_nucs; ap++) {
+				double t_start_fast;
+				double t_stop_fast;
+				double t_fast;
+				t_start_fast = 0;
+				t_stop_fast = FAST_TIME_MAX;
+				/* Allele_0 */
+				t_fast = t_start_fast;
+				inner_iter_kounter = 0;
+				while (t_fast < t_stop_fast) {
+					double tau_fast;
+					int promoter_number, tf;
+					int site_number;
+					int reaction_type;
+					int reaction_number;
+					reaction_number = mssa_get_reaction_fast(tc->solution_protein,
+					                                         tc->bound_protein,
+					                                         problem->allele_0, 
+					                                         &tau_fast, 
+					                                         &reaction_type, 
+					                                         &tf, 
+					                                         &promoter_number, 
+					                                         &site_number,
+					                                         problem->n_sites, 
+					                                         problem->n_tfs, 
+					                                         problem->n_target_genes, 
+					                                         ap);
+					//					printf("multiscale_ssa %d a0 %f %f %f %d\n", ap, t_synch, t_fast, tau_fast, reaction_number);
+					t_fast += tau_fast;
+					inner_iter_kounter++;
+				}
+				/* Allele_1 */
+				t_fast = t_start_fast;
+				while (t_fast < t_stop_fast) {
+					double tau_fast;
+					int promoter_number, tf;
+					int site_number;
+					int reaction_type;
+					int reaction_number;
+					reaction_number = mssa_get_reaction_fast(tc->solution_protein, 
+					                                         tc->bound_protein,
+					                                         problem->allele_1, 
+					                                         &tau_fast, 
+					                                         &reaction_type,
+					                                         &tf,
+					                                         &promoter_number,
+					                                         &site_number,
+					                                         problem->n_sites,
+					                                         problem->n_tfs, 
+					                                         problem->n_target_genes,
+					                                         ap);
+					//					printf("multiscale_ssa %d a1 %f %f %f %d\n", ap, t_synch, t_fast, tau_fast, reaction_number);
+					t_fast += tau_fast;
+					inner_iter_kounter++;
+				}
+			}
+		}
+		reaction_number_slow = mssa_get_reaction_slow_with_transport (tc->solution_mrna, 
+		                                                              tc->solution_protein, 
+		                                                              problem->allele_0, 
+		                                                              problem->allele_1, 
+		                                                              &tau_slow,
+		                                                              &reaction_type_slow, 
+		                                                              &promoter_number_slow,
+		                                                              &nuc_number_slow,
+		                                                              problem->target_gene_index,
+		                                                              problem->n_sites,
+		                                                              propensity,
+		                                                              probability,
+		                                                              number_of_reactions_per_nuc,
+		                                                              number_of_reactions,
+		                                                              problem->parameters->T,
+		                                                              problem->parameters->protein_degradation, 
+		                                                              problem->parameters->mrna_degradation,
+		                                                              problem->parameters->translation,
+		                                                              problem->parameters->transport_mrna,
+		                                                              problem->parameters->transport_protein,
+		                                                              problem->n_tfs, 
+		                                                              problem->n_target_genes,
+		                                                              tc->n_nucs,
+		                                                              slow_only);
+		printf("multiscale_ssa synch %d %f %f %d %d %d %d fast %d\n", iter_kounter, t_slow, tau_slow, reaction_number_slow, nuc_number_slow, promoter_number_slow, reaction_type_slow, inner_iter_kounter);
+		iter_kounter++;
+		t_slow += tau_slow;
+	} /* end of slow loop */
+	g_free(propensity);
+	g_free(probability);
 	mssa_print_timeclass (tc, problem);
 }
 
