@@ -980,37 +980,57 @@ int mssa_get_reaction_slow_with_transport(double *solution_mrna,
 				g_warning("slow prot: ap %d tf %d < 0", ap, k);
 				solution_protein[reaction_nuc * n_tfs + k] = 0;
 			}
+		break;
 		case 6: /* left transport mrna */
 			k = target_gene_index[reaction_target];
-			solution_mrna[(reaction_nuc - 1) * n_tfs + k]--;
-			solution_mrna[reaction_nuc * n_tfs + k]++;
-			if (solution_mrna[(reaction_nuc - 1) * n_tfs + k] < 0) {
-				g_warning("slow prot: ap %d tf %d < 0", ap, k);
-				solution_mrna[(reaction_nuc - 1) * n_tfs + k] = 0;
+			if ((reaction_nuc - 1) > -1) {		
+				solution_mrna[(reaction_nuc - 1) * n_tfs + k]--;
+				solution_mrna[reaction_nuc * n_tfs + k]++;
+				if (solution_mrna[(reaction_nuc - 1) * n_tfs + k] < 0) {
+					g_warning("slow prot: ap %d tf %d < 0", ap, k);
+					solution_mrna[(reaction_nuc - 1) * n_tfs + k] = 0;
+				}
+			} else {
+				g_warning("slow prot: %d ap %d bad %d", reaction_index, reaction_nuc, n_nucs);
 			}
+		break;
 		case 7: /* right transport mrna */
 			k = target_gene_index[reaction_target];
-			solution_mrna[(reaction_nuc + 1) * n_tfs + k]--;
-			solution_mrna[reaction_nuc * n_tfs + k]++;
-			if (solution_mrna[(reaction_nuc + 1) * n_tfs + k] < 0) {
-				g_warning("slow prot: ap %d tf %d < 0", ap, k);
-				solution_mrna[(reaction_nuc + 1) * n_tfs + k] = 0;
+			if ((reaction_nuc + 1) < n_nucs) {
+				solution_mrna[(reaction_nuc + 1) * n_tfs + k]--;
+				solution_mrna[reaction_nuc * n_tfs + k]++;
+				if (solution_mrna[(reaction_nuc + 1) * n_tfs + k] < 0) {
+					g_warning("slow prot: ap %d tf %d < 0", ap, k);
+					solution_mrna[(reaction_nuc + 1) * n_tfs + k] = 0;
+				}
+			} else {
+				g_warning("slow prot: %d ap %d bad %d", reaction_index, reaction_nuc, n_nucs);
 			}
+		break;
 		case 8: /* left transport protein */
 			k = target_gene_index[reaction_target];
-			solution_protein[(reaction_nuc - 1) * n_tfs + k]--;
-			solution_protein[reaction_nuc * n_tfs + k]++;
-			if (solution_protein[(reaction_nuc - 1) * n_tfs + k] < 0) {
-				g_warning("slow prot: ap %d tf %d < 0", ap, k);
-				solution_protein[(reaction_nuc - 1) * n_tfs + k] = 0;
+			if ((reaction_nuc - 1) > -1) {
+				solution_protein[(reaction_nuc - 1) * n_tfs + k]--;
+				solution_protein[reaction_nuc * n_tfs + k]++;
+				if (solution_protein[(reaction_nuc - 1) * n_tfs + k] < 0) {
+					g_warning("slow prot: ap %d tf %d < 0", ap, k);
+					solution_protein[(reaction_nuc - 1) * n_tfs + k] = 0;
+				}
+			} else {
+				g_warning("slow prot: %d ap %d bad %d", reaction_index, reaction_nuc, n_nucs);
 			}
+		break;
 		case 9: /* right transport protein */
 			k = target_gene_index[reaction_target];
-			solution_protein[(reaction_nuc + 1) * n_tfs + k]--;
-			solution_protein[reaction_nuc * n_tfs + k]++;
-			if (solution_protein[(reaction_nuc + 1) * n_tfs + k] < 0) {
-				g_warning("slow prot: ap %d tf %d < 0", ap, k);
-				solution_protein[(reaction_nuc + 1) * n_tfs + k] = 0;
+			if ((reaction_nuc + 1) < n_nucs) {
+				solution_protein[(reaction_nuc + 1) * n_tfs + k]--;
+				solution_protein[reaction_nuc * n_tfs + k]++;
+				if (solution_protein[(reaction_nuc + 1) * n_tfs + k] < 0) {
+					g_warning("slow prot: ap %d tf %d < 0", ap, k);
+					solution_protein[(reaction_nuc + 1) * n_tfs + k] = 0;
+				}
+			} else {
+				g_warning("slow prot: %d ap %d bad %d", reaction_index, reaction_nuc, n_nucs);
 			}
 		break;
 	}
@@ -1245,7 +1265,7 @@ void propagate_with_transport (MSSA_Timeclass *tc, MSSA_Problem *problem)
 		problem->n_target_genes + /* right transport mrna */
 		problem->n_target_genes + /* left transport protein */
 		problem->n_target_genes; /* right transport protein */
-	number_of_reactions = number_of_reactions_per_nuc * tc->n_nucs - 4 * problem->n_target_genes;
+	number_of_reactions = number_of_reactions_per_nuc * tc->n_nucs; // - 2 * problem->n_target_genes;
 	int slow_only = (tc->type == 3) ? 1 : 0;
 	propensity = g_new0(double, number_of_reactions);
 	probability = g_new0(double, number_of_reactions);	
@@ -1341,7 +1361,7 @@ void propagate_with_transport (MSSA_Timeclass *tc, MSSA_Problem *problem)
 		                                                              problem->n_tfs, 
 		                                                              problem->n_target_genes,
 		                                                              tc->n_nucs,
-		                                                              slow_only);
+		                                                              1 - slow_only);
 		printf("multiscale_ssa synch %d %f %f %d %d %d %d fast %d\n", iter_kounter, t_slow, tau_slow, reaction_number_slow, nuc_number_slow, promoter_number_slow, reaction_type_slow, inner_iter_kounter);
 		iter_kounter++;
 		t_slow += tau_slow;
@@ -1456,13 +1476,13 @@ void integrate (MSSA_Timeclass *tc, MSSA_Problem *problem)
 	if (tc->type == 2) {
 		inject (tc, problem);
 		add_bias (tc, problem);
-		propagate (tc, problem);
+		propagate_with_transport (tc, problem);
 	}
 /* Run the model */
 	if (tc->type == 1) {
 		inject (tc, problem);
 		if (tc->has_data == 1) score (tc, problem);
-		propagate (tc, problem);
+		propagate_with_transport (tc, problem);
 	}
 /* Nuclear division, All protein is to be unbound already */
 	if (tc->type == 0) divide (tc, problem);
@@ -1472,7 +1492,7 @@ void integrate (MSSA_Timeclass *tc, MSSA_Problem *problem)
  */
 	if (tc->type == 3) {
 		unbound (tc, problem);
-		propagate_slow_only (tc, problem);
+		propagate_with_transport (tc, problem);
 	}
 }
 
