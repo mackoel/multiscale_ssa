@@ -202,6 +202,7 @@ typedef struct {
 	MSSA_site ***allele_0; /* sites on the first allele */
 	MSSA_site ***allele_1; /* sites on the second allele */
 	MSSA_Parameters *parameters;
+	int repeat;
 } MSSA_Problem;
 
 static char*data_file;
@@ -209,6 +210,7 @@ static char*out_file;
 static char*log_file;
 static char*action;
 static gboolean verbose = FALSE;
+static int repeat;
 
 MSSA_Problem *mssa_read_problem(gchar*filename)
 {
@@ -558,20 +560,20 @@ int mssa_get_reaction_fast_with_buffers(double *solution,
 }
 
 int mssa_get_reaction_fast_with_buffers_2(double *solution,
-                                        double *bound,
-                                        MSSA_site ***allele_0,
-                                        MSSA_site ***allele_1,
-                                        double *propensity,
-                                        double *probability,                                        
-                                        double *tau, 
-                                        int *reaction_type, 
-                                        int *tf, 
-                                        int *target, 
-                                        int *site_number,
-                                        int *n_sites,
-                                        int n_tfs, 
-                                        int n_target_genes, 
-                                        int ap)
+                                          double *bound,
+                                          MSSA_site ***allele_0,
+                                          MSSA_site ***allele_1,
+                                          double *propensity,
+                                          double *probability,                                        
+                                          double *tau, 
+                                          int *reaction_type, 
+                                          int *tf, 
+                                          int *target, 
+                                          int *site_number,
+                                          int *n_sites,
+                                          int n_tfs, 
+                                          int n_target_genes, 
+                                          int ap)
 {
 	int i, j, k, reaction_number, s, l, found, allele;
 	double aggregate;
@@ -1367,7 +1369,7 @@ int mssa_get_reaction_slow_with_transport(double *solution_mrna,
 
 void mssa_print_timeclass (MSSA_Timeclass *tc, MSSA_Problem *problem)
 {
-	fprintf(stdout, "time %f %f protein:\n", tc->t_start, tc->t_end); 
+	fprintf(stdout, "%d time %f %f protein:\n", problem->repeat, tc->t_start, tc->t_end); 
 	for (int i = 0; i < tc->n_nucs; i++) {
 		for (int j = 0; j < problem->n_tfs; j++) {
 			fprintf(stdout, "%f ", tc->solution_protein[i * problem->n_tfs + j]);
@@ -1401,14 +1403,14 @@ void mssa_out_timeclass (MSSA_Timeclass *tc, MSSA_Problem *problem)
 	FILE*fp;
 	fp = (out_file == NULL) ? stdout : fopen(out_file, "a");
 	for (int i = 0; i < tc->n_nucs; i++) {
-		fprintf(fp, "%d %6.3f ", i, tc->t_end);
+		fprintf(fp, "%d %d %6.3f ", problem->repeat, i, tc->t_end);
 		for (int j = 0; j < problem->n_target_genes; j++) {
 			int k = problem->target_gene_index[j];
 			fprintf(fp, "%.0f ", tc->solution_protein[i * problem->n_tfs + k] + tc->bound_protein[i * problem->n_tfs + k]);
 		}
 		for (int j = 0; j < problem->n_target_genes; j++) {
 			int k = problem->target_gene_index[j];
-			fprintf(stdout, "%.0f ", tc->solution_mrna[i * problem->n_tfs + k]);
+			fprintf(fp, "%.0f ", tc->solution_mrna[i * problem->n_tfs + k]);
 		}
 		fprintf(fp, "\n");
 	}
@@ -1417,7 +1419,7 @@ void mssa_out_timeclass (MSSA_Timeclass *tc, MSSA_Problem *problem)
 
 void add_bias (MSSA_Timeclass *tc, MSSA_Problem *problem)
 {
-	printf("multiscale_ssa add bias %d\n", tc->kounter);
+	printf("multiscale_ssa %d add bias %d\n", problem->repeat, tc->kounter);
 	for (int i = 0; i < tc->n_nucs; i++) {
 		for (int j = 0; j < problem->n_target_genes; j++) {
 			int k = problem->target_gene_index[j];
@@ -1430,7 +1432,7 @@ void add_bias (MSSA_Timeclass *tc, MSSA_Problem *problem)
 
 void score (MSSA_Timeclass *tc, MSSA_Problem *problem)
 {
-	printf("multiscale_ssa %d score=", tc->kounter);
+	printf("multiscale_ssa %d %d score=", problem->repeat, tc->kounter);
 	double score = 0;
 	for (int i = 0; i < tc->n_nucs; i++) {
 		for (int j = 0; j < problem->n_target_genes; j++) {
@@ -1599,7 +1601,7 @@ void propagate_slow_only (MSSA_Timeclass *tc, MSSA_Problem *problem)
 
 void propagate_with_transport (MSSA_Timeclass *tc, MSSA_Problem *problem)
 {
-	if (verbose) printf("multiscale_ssa propagate %d\n", tc->kounter);
+	if (verbose) printf("multiscale_ssa %d propagate %d\n", problem->repeat, tc->kounter);
 	double t_start_slow;
 	double t_stop_slow;
 	double t_slow, tau_slow;
@@ -1635,7 +1637,7 @@ void propagate_with_transport (MSSA_Timeclass *tc, MSSA_Problem *problem)
 	int iter_kounter = 0;
 	t_slow = t_start_slow;
 	while (t_slow < t_stop_slow) {
-		int reaction_number_slow, inner_iter_kounter;
+		int reaction_number_slow, inner_iter_kounter = 0;
 		int reaction_type_slow, promoter_number_slow;
 		int nuc_number_slow;
 		if (slow_only == 0) { /* interphase */
@@ -1647,7 +1649,7 @@ void propagate_with_transport (MSSA_Timeclass *tc, MSSA_Problem *problem)
 				t_start_fast = 0;
 				t_stop_fast = FAST_TIME_MAX;
 				t_fast = t_start_fast;
-				inner_iter_kounter = 0;
+/*				inner_iter_kounter = 0;*/
 				while (t_fast < t_stop_fast) {
 					double tau_fast;
 					int promoter_number, tf;
@@ -1704,7 +1706,7 @@ void propagate_with_transport (MSSA_Timeclass *tc, MSSA_Problem *problem)
 /* Print the configuration of reg region to the log file */
 		if (log_file != NULL) {
 			FILE*fp = fopen(log_file, "a");
-			fprintf(fp, "%d slow %d %f %f %d %d %d %d", tc->kounter, iter_kounter, t_slow, tau_slow, reaction_number_slow, nuc_number_slow, promoter_number_slow, reaction_type_slow);
+			fprintf(fp, "%d %d slow %d %f %f %d %d %d %d", problem->repeat, tc->kounter, iter_kounter, t_slow, tau_slow, reaction_number_slow, nuc_number_slow, promoter_number_slow, reaction_type_slow);
 			if (slow_only == 0) {
 				fprintf(fp, " fast %d allele_0", inner_iter_kounter);
 				for (int ap = 0; ap < tc->n_nucs; ap++) {
@@ -1727,7 +1729,7 @@ void propagate_with_transport (MSSA_Timeclass *tc, MSSA_Problem *problem)
 			fclose (fp);
 		} else {
 /* if log file is not given print log to the screen */
-			fprintf(stderr, "%d slow %d %f %f %d %d %d %d", tc->kounter, iter_kounter, t_slow, tau_slow, reaction_number_slow, nuc_number_slow, promoter_number_slow, reaction_type_slow);
+			fprintf(stderr, "%d %d slow %d %f %f %d %d %d %d", problem->repeat, tc->kounter, iter_kounter, t_slow, tau_slow, reaction_number_slow, nuc_number_slow, promoter_number_slow, reaction_type_slow);
 			if (slow_only == 0) {
 				fprintf(stderr, " fast %d", inner_iter_kounter);
 			}
@@ -1771,7 +1773,7 @@ void unbound (MSSA_Timeclass *tc, MSSA_Problem *problem)
 			tc->bound_protein[i * problem->n_tfs + j] = 0;
 		}
 	}
-	for(int k = 1; k < problem->n_nucs; k++) {
+	for(int k = 0; k < problem->n_nucs; k++) {
 		for (int i = 0; i < problem->n_target_genes; i++) {
 			for (int j = 0; j < problem->n_sites[i]; j++) {
 				problem->allele_0[k][i][j].status = 0;
@@ -1841,7 +1843,7 @@ void connect (MSSA_Timeclass *tc, MSSA_Problem *problem)
 void integrate (MSSA_Timeclass *tc, MSSA_Problem *problem)
 {
 /* Debug tag */
-	if (verbose) printf("multiscale_ssa integrate %d\n", tc->kounter);
+	if (verbose) printf("multiscale_ssa %d integrate %d\n", problem->repeat, tc->kounter);
 /* Print initial condition */
 	if (tc->kounter == 0) mssa_print_timeclass (tc, problem);
 /* Copy result from previous TC */
@@ -1913,6 +1915,7 @@ static GOptionEntry entries[] =
 	{ "logfile", 'l', 0, G_OPTION_ARG_STRING, &log_file, N_("File name for progress"), N_("FILENAME") },
 	{ "outfile", 'o', 0, G_OPTION_ARG_STRING, &out_file, N_("File name for concentrations"), N_("FILENAME") },
 	{ "action", 'a', 0, G_OPTION_ARG_STRING, &action, N_("What to do"), N_("OPERATION") },
+	{ "repeat", 'r', 1, G_OPTION_ARG_INT, &repeat, N_("Number of repeats"), N_("REPEAT") },
 	{ "verbose", 'v', 0, G_OPTION_ARG_NONE, &verbose, N_("verbose"), N_("VERBOSE") },
 	{ "version", 'V', G_OPTION_FLAG_NO_ARG | G_OPTION_FLAG_HIDDEN, G_OPTION_ARG_CALLBACK, option_version_cb, NULL, NULL },
 	{ NULL }
@@ -1945,6 +1948,9 @@ int main(int argc, char**argv)
 	if (verbose) printf("multiscale_ssa nnucs %d\n", problem->n_nucs);
 	if (verbose) printf("multiscale_ssa tfs %d\n", problem->n_tfs);
 	if (verbose) printf("multiscale_ssa targets %d\n", problem->n_target_genes);
-	g_list_foreach (problem->tc_list, (GFunc) integrate, (gpointer) problem);
+	for (int r = 0; r < repeat; r++) {
+		problem->repeat = r;
+		g_list_foreach (problem->tc_list, (GFunc) integrate, (gpointer) problem);
+	}
 	return (0);
 }
