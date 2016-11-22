@@ -31,7 +31,7 @@
 
 #define SECONDS_PER_DAY 86400
 #define MAX_SYNCH_ITER 1e2
-#define MOLECULES_PER_CONCENTRATION 1e2
+#define MOLECULES_PER_CONCENTRATION 1e1
 #define SYNCH_STEPS_PER_SLOW 20
 #define FAST_TIME_MAX 0.50
 
@@ -568,11 +568,15 @@ void mssa_check_site_overlap (MSSA_site ***allele, int nuc, int gen, int cur, in
 {
 	int kount_fw = (type == 0) ? allele[nuc][gen][cur].blocked_fw : allele[nuc][gen][cur].repressed_fw;
 	int kount_bk = (type == 0) ? allele[nuc][gen][cur].blocked_bk : allele[nuc][gen][cur].repressed_bk;
+/*	kount_fw = MIN(kount_fw, 1);
+	kount_bk = MIN(kount_bk, 1);*/
 	for (int l = 0; l < kount_fw; l++) {
-		allele[nuc][gen][cur + 1 + l].status = block;
+		if (allele[nuc][gen][cur + 1 + l].status != 1)
+			allele[nuc][gen][cur + 1 + l].status = block;
 	}
 	for (int l = 0; l < kount_bk; l++) {
-		allele[nuc][gen][cur - 1 - l].status = block;
+		if (allele[nuc][gen][cur - 1 - l].status != 1)
+			allele[nuc][gen][cur - 1 - l].status = block;
 	}
 }
 
@@ -649,7 +653,27 @@ int mssa_get_reaction_fast_with_buffers_2(double *solution,
 
 	}
 	if (prop_sum <= 0.00000000001) {
-		g_warning("fast %d: Sum of propensities is too small %g!", ap, prop_sum); 
+		if (verbose) {
+			int y = 0;
+			for (i = 0; i < n_target_genes; i++) {
+				for (j = 0; j < n_tfs; j++) {
+					if (bound[ap * n_tfs + j] > 0) y++;
+				}
+			}
+			int z = 0;
+			for (i = 0; i < n_target_genes; i++) {
+				for (j = 0; j < n_tfs; j++) {
+					if (solution[ap * n_tfs + j] > 0) z++;
+				}
+			}
+			int p = 0;
+			for (i = 0; i < 4 * n_tfs * n_target_genes; i++) {
+				if (propensity[i] < 0) p++;
+			}
+			g_warning("fast %d: Sum of propensities is too small %g! bound %d sol %d p %d", ap, prop_sum, y, z, p);
+		} else {
+			g_warning("fast %d: Sum of propensities is too small %g!", ap, prop_sum);
+		}
 		(*tau) = TMAX;
 		(*target) = -1;
 		(*tf) = -1;
@@ -749,7 +773,7 @@ int mssa_get_reaction_fast_with_buffers_2(double *solution,
 						solution[ap * n_tfs + (*tf)] = 0;
 					}
 					/* allelle, nuc, gen, cur, type, block */
-					mssa_check_site_overlap (allele_0, ap, (*tf), s, 0, ((*reaction_type) == 1) ? -1 : 0);
+					mssa_check_site_overlap (allele_0, ap, (*target), s, 0, ((*reaction_type) == 1) ? -1 : 0);
 					break;
 				}
 				s++;
@@ -770,7 +794,7 @@ int mssa_get_reaction_fast_with_buffers_2(double *solution,
 						g_warning("fast reaction n %d t %d: ap %d tf %d target %d < 0", reaction_number, (*reaction_type), ap, (*tf), (*target));
 						solution[ap * n_tfs + (*tf)] = 0;
 					}
-					mssa_check_site_overlap (allele_1, ap, (*tf), s, 0, ((*reaction_type) == 1) ? -1 : 0);
+					mssa_check_site_overlap (allele_1, ap, (*target), s, 0, ((*reaction_type) == 1) ? -1 : 0);
 					break;
 				}
 				s++;
@@ -1901,19 +1925,21 @@ void mssa_mark_site_overlap (MSSA_Problem *problem, int range)
 					kount_fw++;
 				}
 				for (int l = j - 1; l > -1; l--) {
-					if (problem->allele_0[k][i][l].coordinate > problem->allele_0[k][i][j].coordinate - range)
+					if (problem->allele_0[k][i][l].coordinate < problem->allele_0[k][i][j].coordinate - range)
 						break;
 					kount_bk++;
 				}
 				problem->allele_0[k][i][j].repressed_fw = problem->allele_1[k][i][j].repressed_fw = kount_fw;
 				problem->allele_0[k][i][j].repressed_bk = problem->allele_1[k][i][j].repressed_bk = kount_bk;
+				kount_fw = 0;
+				kount_bk = 0;
 				for (int l = j + 1; l < problem->n_sites[i]; l++) {
 					if (problem->allele_0[k][i][l].coordinate > problem->allele_0[k][i][j].coordinate + problem->allele_0[k][i][j].length)
 						break;
 					kount_fw++;
 				}
 				for (int l = j - 1; l > -1; l--) {
-					if (problem->allele_0[k][i][l].coordinate + problem->allele_0[k][i][l].length > problem->allele_0[k][i][j].coordinate - problem->allele_0[k][i][j].length)
+					if (problem->allele_0[k][i][l].coordinate < problem->allele_0[k][i][j].coordinate - problem->allele_0[k][i][j].length)
 						break;
 					kount_bk++;
 				}
