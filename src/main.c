@@ -1774,6 +1774,7 @@ void propagate_with_transport (MSSA_Timeclass *tc, MSSA_Problem *problem)
 void inject (MSSA_Timeclass *tc, MSSA_Problem *problem)
 {
 	if (verbose) printf("multiscale_ssa inject %d\n", tc->kounter);
+#pragma omp parallel for collapse(2) schedule(static) default(none) shared(problem, tc)
 	for (int i = 0; i < tc->n_nucs; i++) {
 		for (int j = 0; j < problem->n_external_genes; j++) {
 			int k = problem->external_gene_index[j];
@@ -1784,15 +1785,40 @@ void inject (MSSA_Timeclass *tc, MSSA_Problem *problem)
 	if (verbose) mssa_print_timeclass (tc, problem);
 }
 
+void zero_structure (MSSA_Timeclass *tc, MSSA_Problem *problem)
+{
+	if (verbose) printf("multiscale_ssa zero_structure %d\n", tc->kounter);
+#pragma omp parallel for collapse(2) schedule(static) default(none) shared(problem, tc)
+	for (int i = 0; i < tc->n_nucs; i++) {
+		for (int j = 0; j < problem->n_tfs; j++) {
+			tc->solution_protein[i * problem->n_tfs + j] = 0;
+			tc->solution_mrna[i * problem->n_tfs + j] = 0;
+			tc->bound_protein[i * problem->n_tfs + j] = 0;
+		}
+	}
+#pragma omp parallel for collapse(2) schedule(static) default(none) shared(problem, tc)
+	for(int k = 0; k < problem->n_nucs; k++) {
+		for (int i = 0; i < problem->n_target_genes; i++) {
+			for (int j = 0; j < problem->n_sites[i]; j++) {
+				problem->allele_0[k][i][j].status = 0;
+				problem->allele_1[k][i][j].status = 0;
+			}
+		}
+	}
+	if (verbose) mssa_print_timeclass (tc, problem);
+}
+
 void unbound (MSSA_Timeclass *tc, MSSA_Problem *problem)
 {
 	if (verbose) printf("multiscale_ssa unbound %d\n", tc->kounter);
+#pragma omp parallel for collapse(2) schedule(static) default(none) shared(problem, tc)
 	for (int i = 0; i < tc->n_nucs; i++) {
 		for (int j = 0; j < problem->n_tfs; j++) {
 			tc->solution_protein[i * problem->n_tfs + j] += tc->bound_protein[i * problem->n_tfs + j];
 			tc->bound_protein[i * problem->n_tfs + j] = 0;
 		}
 	}
+#pragma omp parallel for collapse(2) schedule(static) default(none) shared(problem, tc)
 	for(int k = 0; k < problem->n_nucs; k++) {
 		for (int i = 0; i < problem->n_target_genes; i++) {
 			for (int j = 0; j < problem->n_sites[i]; j++) {
@@ -1850,6 +1876,7 @@ void connect (MSSA_Timeclass *tc, MSSA_Problem *problem)
 	if (verbose) printf("multiscale_ssa connect %d\n", tc->kounter);
 	MSSA_Timeclass *tc_prev = (MSSA_Timeclass *) g_list_nth_data (problem->tc_list, (tc->kounter - 1));
 	if (!tc_prev) return;
+#pragma omp parallel for collapse(2) schedule(static) default(none) shared(problem, tc, tc_prev)
 	for (int i = 0; i < tc_prev->n_nucs; i++) {
 		for (int j = 0; j < problem->n_tfs; j++) {
 			tc->solution_mrna[i * problem->n_tfs + j] = tc_prev->solution_mrna[i * problem->n_tfs + j];
@@ -2006,9 +2033,12 @@ int main(int argc, char**argv)
 	if (verbose) printf("multiscale_ssa nnucs %d\n", problem->n_nucs);
 	if (verbose) printf("multiscale_ssa tfs %d\n", problem->n_tfs);
 	if (verbose) printf("multiscale_ssa targets %d\n", problem->n_target_genes);
-	for (int r = 0; r < repeat; r++) {
+	for (int r = 0; r < repeat - 1; r++) {
 		problem->repeat = r;
 		g_list_foreach (problem->tc_list, (GFunc) integrate, (gpointer) problem);
+		zero_structure (g_list_nth_data (problem->tc_list, 0), problem);
 	}
+	problem->repeat = repeat - 1;
+	g_list_foreach (problem->tc_list, (GFunc) integrate, (gpointer) problem);
 	return (0);
 }
