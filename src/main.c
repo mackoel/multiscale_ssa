@@ -178,6 +178,10 @@ typedef struct {
 	int length;
 	double energy;
 	int tf_index;
+	int blocked_fw;
+	int blocked_bk;
+	int repressed_fw;
+	int repressed_bk;
 	int status; /* bound = 1, free = 0, blocked = -1 */
 } MSSA_site;
 
@@ -188,6 +192,7 @@ typedef struct {
 	double *translation;
 	double *transport_mrna;
 	double *transport_protein;
+	double range;
 } MSSA_Parameters;
 
 typedef struct {
@@ -559,6 +564,18 @@ int mssa_get_reaction_fast_with_buffers(double *solution,
 	return (reaction_number);
 }
 
+void mssa_check_site_overlap (MSSA_site ***allele, int nuc, int gen, int cur, int type, int block)
+{
+	int kount_fw = (type == 0) ? allele[nuc][gen][cur].blocked_fw : allele[nuc][gen][cur].repressed_fw;
+	int kount_bk = (type == 0) ? allele[nuc][gen][cur].blocked_bk : allele[nuc][gen][cur].repressed_bk;
+	for (int l = 0; l < kount_fw; l++) {
+		allele[nuc][gen][cur + 1 + l].status = block;
+	}
+	for (int l = 0; l < kount_bk; l++) {
+		allele[nuc][gen][cur - 1 - l].status = block;
+	}
+}
+
 int mssa_get_reaction_fast_with_buffers_2(double *solution,
                                           double *bound,
                                           MSSA_site ***allele_0,
@@ -731,6 +748,8 @@ int mssa_get_reaction_fast_with_buffers_2(double *solution,
 						g_warning("fast reaction n %d t %d: ap %d tf %d target %d < 0", reaction_number, (*reaction_type), ap, (*tf), (*target));
 						solution[ap * n_tfs + (*tf)] = 0;
 					}
+					/* allelle, nuc, gen, cur, type, block */
+					mssa_check_site_overlap (allele_0, ap, (*tf), s, 0, ((*reaction_type) == 1) ? -1 : 0);
 					break;
 				}
 				s++;
@@ -751,6 +770,7 @@ int mssa_get_reaction_fast_with_buffers_2(double *solution,
 						g_warning("fast reaction n %d t %d: ap %d tf %d target %d < 0", reaction_number, (*reaction_type), ap, (*tf), (*target));
 						solution[ap * n_tfs + (*tf)] = 0;
 					}
+					mssa_check_site_overlap (allele_1, ap, (*tf), s, 0, ((*reaction_type) == 1) ? -1 : 0);
 					break;
 				}
 				s++;
@@ -1840,6 +1860,43 @@ void connect (MSSA_Timeclass *tc, MSSA_Problem *problem)
 	if (verbose) mssa_print_timeclass (tc, problem);
 }
 
+void mssa_mark_site_overlap (MSSA_Problem *problem, int range)
+{
+#pragma omp parallel for collapse(2) schedule(static) default(none) shared(range, problem)
+	for(int k = 0; k < problem->n_nucs; k++) {
+		for (int i = 0; i < problem->n_target_genes; i++) {
+			for (int j = 0; j < problem->n_sites[i]; j++) {
+				int kount_fw = 0;
+				int kount_bk = 0;
+				for (int l = j + 1; l < problem->n_sites[i]; l++) {
+					if (problem->allele_0[k][i][l].coordinate > problem->allele_0[k][i][j].coordinate + range)
+						break;
+					kount_fw++;
+				}
+				for (int l = j - 1; l > -1; l--) {
+					if (problem->allele_0[k][i][l].coordinate > problem->allele_0[k][i][j].coordinate - range)
+						break;
+					kount_bk++;
+				}
+				problem->allele_0[k][i][j].repressed_fw = problem->allele_1[k][i][j].repressed_fw = kount_fw;
+				problem->allele_0[k][i][j].repressed_bk = problem->allele_1[k][i][j].repressed_bk = kount_bk;
+				for (int l = j + 1; l < problem->n_sites[i]; l++) {
+					if (problem->allele_0[k][i][l].coordinate > problem->allele_0[k][i][j].coordinate + problem->allele_0[k][i][j].length)
+						break;
+					kount_fw++;
+				}
+				for (int l = j - 1; l > -1; l--) {
+					if (problem->allele_0[k][i][l].coordinate + problem->allele_0[k][i][l].length > problem->allele_0[k][i][j].coordinate - problem->allele_0[k][i][j].length)
+						break;
+					kount_bk++;
+				}
+				problem->allele_0[k][i][j].blocked_fw = problem->allele_1[k][i][j].blocked_fw = kount_fw;
+				problem->allele_0[k][i][j].blocked_bk = problem->allele_1[k][i][j].blocked_bk = kount_bk;
+			}
+		}
+	}
+}
+
 void integrate (MSSA_Timeclass *tc, MSSA_Problem *problem)
 {
 /* Debug tag */
@@ -1926,7 +1983,7 @@ int main(int argc, char**argv)
 	if (verbose) printf("multiscale_ssa start\n");
 	GOptionContext *context;
 	GError *gerror = NULL;
-	context = g_option_context_new (_("- DEEP optimizer"));
+	context = g_option_context_new (_("- MSSA blastoderm"));
 	g_option_context_add_main_entries(context, (const GOptionEntry *)entries, NULL);
 	g_option_context_set_ignore_unknown_options(context, TRUE);
 	if (!g_option_context_parse (context, &argc, &argv, &gerror)) {
@@ -1943,6 +2000,7 @@ int main(int argc, char**argv)
 		g_warning(_("%s called without out file"), g_get_prgname());
 	}
 	MSSA_Problem *problem = mssa_read_problem(data_file);
+	mssa_mark_site_overlap (problem, problem->parameters->range);
 	grand = g_rand_new ();
 	if (verbose) printf("multiscale_ssa read problem\n");
 	if (verbose) printf("multiscale_ssa nnucs %d\n", problem->n_nucs);
