@@ -215,6 +215,7 @@ static char*out_file;
 static char*log_file;
 static char*action;
 static gboolean verbose = FALSE;
+static gboolean dryrun = FALSE;
 static int repeat;
 
 MSSA_Problem *mssa_read_problem(gchar*filename)
@@ -1962,7 +1963,7 @@ void integrate (MSSA_Timeclass *tc, MSSA_Problem *problem)
 	if (tc->type == 2) {
 		inject (tc, problem);
 		add_bias (tc, problem);
-		propagate_with_transport (tc, problem);
+		if (!dryrun) propagate_with_transport (tc, problem);
 	}
 /* Run the model */
 	if (tc->type == 1) {
@@ -1970,7 +1971,7 @@ void integrate (MSSA_Timeclass *tc, MSSA_Problem *problem)
 			inject (tc, problem);
 			score (tc, problem);
 		}
-		propagate_with_transport (tc, problem);
+		if (!dryrun) propagate_with_transport (tc, problem);
 	}
 /* Nuclear division, All protein is to be unbound already */
 	if (tc->type == 0) divide (tc, problem);
@@ -1980,7 +1981,7 @@ void integrate (MSSA_Timeclass *tc, MSSA_Problem *problem)
  */
 	if (tc->type == 3) {
 		unbound (tc, problem);
-		propagate_with_transport (tc, problem);
+		if (!dryrun) propagate_with_transport (tc, problem);
 	}
 	mssa_out_timeclass (tc, problem);
 }
@@ -2021,7 +2022,7 @@ option_version_cb (const gchar *option_name,
 
 static GOptionEntry entries[] =
 {
-	{ "datafile", 'd', 0, G_OPTION_ARG_STRING, &data_file, N_("File name for everything and default group names"), N_("FILENAME") },
+	{ "dryrun", 'd', 0, G_OPTION_ARG_NONE, &dryrun, N_("Calculations are not performed"), N_("DRYRUN") },
 	{ "logfile", 'l', 0, G_OPTION_ARG_STRING, &log_file, N_("File name for progress"), N_("FILENAME") },
 	{ "outfile", 'o', 0, G_OPTION_ARG_STRING, &out_file, N_("File name for concentrations"), N_("FILENAME") },
 	{ "action", 'a', 0, G_OPTION_ARG_STRING, &action, N_("What to do"), N_("OPERATION") },
@@ -2043,9 +2044,10 @@ int main(int argc, char**argv)
 		g_error (_("option parsing failed: %s\n"), gerror->message);
 	}
 	g_option_context_free (context);
-	if (data_file == NULL) {
+	if (argc < 2) {
 		g_error(_("%s called without data file"), g_get_prgname());
 	}
+	data_file = g_strdup(argv[1]);
 	if (log_file == NULL) {
 		g_warning(_("%s called without log file"), g_get_prgname());
 	}
