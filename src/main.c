@@ -1444,10 +1444,10 @@ void mssa_print_timeclass (MSSA_Timeclass *tc, MSSA_Problem *problem)
 
 void mssa_out_timeclass (MSSA_Timeclass *tc, MSSA_Problem *problem)
 {
-	FILE*fp;
-	fp = (out_file == NULL) ? stdout : fopen(out_file, "a");
+	if (out_file == NULL) return;
+	FILE*fp = fopen(out_file, "a");
 	for (int i = 0; i < tc->n_nucs; i++) {
-		fprintf(fp, "%d %d %6.3f ", problem->repeat, i, tc->t_end);
+		fprintf(fp, "%d %d %d %6.3f ", problem->repeat, tc->kounter, i, tc->t_end);
 		for (int j = 0; j < problem->n_target_genes; j++) {
 			int k = problem->target_gene_index[j];
 			fprintf(fp, "%.0f ", tc->solution_protein[i * problem->n_tfs + k] + tc->bound_protein[i * problem->n_tfs + k]);
@@ -1458,12 +1458,12 @@ void mssa_out_timeclass (MSSA_Timeclass *tc, MSSA_Problem *problem)
 		}
 		fprintf(fp, "\n");
 	}
-	if (out_file != NULL) fclose(fp);
+	fclose(fp);
 }
 
 void add_bias (MSSA_Timeclass *tc, MSSA_Problem *problem)
 {
-	printf("multiscale_ssa %d add bias %d\n", problem->repeat, tc->kounter);
+	if (verbose) printf("multiscale_ssa %d add bias %d\n", problem->repeat, tc->kounter);
 	for (int i = 0; i < tc->n_nucs; i++) {
 		for (int j = 0; j < problem->n_target_genes; j++) {
 			int k = problem->target_gene_index[j];
@@ -1476,7 +1476,7 @@ void add_bias (MSSA_Timeclass *tc, MSSA_Problem *problem)
 
 void score (MSSA_Timeclass *tc, MSSA_Problem *problem)
 {
-	printf("multiscale_ssa %d %d score=", problem->repeat, tc->kounter);
+	printf("multiscale_ssa %d %d score =", problem->repeat, tc->kounter);
 	double score = 0;
 	for (int i = 0; i < tc->n_nucs; i++) {
 		for (int j = 0; j < problem->n_target_genes; j++) {
@@ -1748,7 +1748,7 @@ void propagate_with_transport (MSSA_Timeclass *tc, MSSA_Problem *problem)
 		iter_kounter++;
 		t_slow += tau_slow;
 /* Print the configuration of reg region to the log file */
-		if (log_file != NULL) {
+		if (log_file != NULL && g_strcmp0 (log_file, "nolog")) {
 			FILE*fp = fopen(log_file, "a");
 			fprintf(fp, "%d %d slow %d %f %f %d %d %d %d", problem->repeat, tc->kounter, iter_kounter, t_slow, tau_slow, reaction_number_slow, nuc_number_slow, promoter_number_slow, reaction_type_slow);
 			if (slow_only == 0) {
@@ -1771,7 +1771,7 @@ void propagate_with_transport (MSSA_Timeclass *tc, MSSA_Problem *problem)
 			}
 			fprintf(fp, "\n");
 			fclose (fp);
-		} else {
+		} else if (log_file == NULL) {
 /* if log file is not given print log to the screen */
 			fprintf(stderr, "%d %d slow %d %f %f %d %d %d %d", problem->repeat, tc->kounter, iter_kounter, t_slow, tau_slow, reaction_number_slow, nuc_number_slow, promoter_number_slow, reaction_type_slow);
 			if (slow_only == 0) {
@@ -1955,7 +1955,7 @@ void integrate (MSSA_Timeclass *tc, MSSA_Problem *problem)
 /* Debug tag */
 	if (verbose) printf("multiscale_ssa %d integrate %d\n", problem->repeat, tc->kounter);
 /* Print initial condition */
-	if (tc->kounter == 0) mssa_print_timeclass (tc, problem);
+	if (tc->kounter == 0 && verbose) mssa_print_timeclass (tc, problem);
 /* Copy result from previous TC */
 	if (tc->type > 0) connect (tc, problem);
 /* Add bias or set the initial cond */ 
@@ -2059,12 +2059,83 @@ int main(int argc, char**argv)
 	if (verbose) printf("multiscale_ssa nnucs %d\n", problem->n_nucs);
 	if (verbose) printf("multiscale_ssa tfs %d\n", problem->n_tfs);
 	if (verbose) printf("multiscale_ssa targets %d\n", problem->n_target_genes);
-	for (int r = 0; r < repeat - 1; r++) {
-		problem->repeat = r;
+	if (!g_strcmp0 (action, "batch")) {
+		g_warning(_("%s called for operation batch"), g_get_prgname());
+		char tag[10];
+		FILE *fp = fopen(argv[argc - 1], "r");
+		fscanf(fp, "%s", tag);
+		for (int i = 0; i < problem->n_target_genes; i++) {
+			for (int j = 0; j < problem->n_tfs; j++) {
+				fscanf(fp, "%lf", &(problem->parameters->T[i * problem->n_tfs + j]));
+			}
+			fscanf(fp, "%lf", &(problem->parameters->translation[i]));
+			fscanf(fp, "%lf", &(problem->parameters->protein_degradation[i]));
+			fscanf(fp, "%lf", &(problem->parameters->mrna_degradation[i]));
+			fscanf(fp, "%lf", &(problem->parameters->transport_mrna[i]));
+			fscanf(fp, "%lf", &(problem->parameters->transport_protein[i]));
+		}
+		fclose (fp);
+		for (int r = 0; r < repeat - 1; r++) {
+			problem->repeat = r;
+			g_list_foreach (problem->tc_list, (GFunc) integrate, (gpointer) problem);
+			zero_structure (g_list_nth_data (problem->tc_list, 0), problem);
+		}
+		problem->repeat = repeat - 1;
 		g_list_foreach (problem->tc_list, (GFunc) integrate, (gpointer) problem);
-		zero_structure (g_list_nth_data (problem->tc_list, 0), problem);
+	} else if (!g_strcmp0 (action, "repl")) {
+		char tag[10];
+/*		while(1) {
+		scanf("%s", tag);
+		fprintf(stderr, "%s\n", tag);
+		printf("\r\nfflush\r\n");
+		fprintf(stderr, "\r\n%s\n", tag);
+			fflush (stderr);
+			fflush (stdout);
+		}
+		scanf("%*s");
+		scanf("%*s");
+		scanf("%*s");
+		scanf("%*s");
+		printf("fflush\r\n");
+		printf("fflush\r\n");*/
+		g_warning(_("%s called for operation optimize"), g_get_prgname());
+//		printf("\r\nfflush\r\n");
+//		fflush (stdout);
+		while (!feof(stdout)) {
+			scanf("%s(", tag);
+			for (int i = 0; i < problem->n_target_genes; i++) {
+				for (int j = 0; j < problem->n_tfs; j++) {
+					scanf("%lf,", &(problem->parameters->T[i * problem->n_tfs + j]));
+				}
+				scanf("%lf,", &(problem->parameters->translation[i]));
+				scanf("%lf,", &(problem->parameters->protein_degradation[i]));
+				scanf("%lf,", &(problem->parameters->mrna_degradation[i]));
+				scanf("%lf,", &(problem->parameters->transport_mrna[i]));
+				if (i < problem->n_target_genes - 1) {
+					scanf("%lf,", &(problem->parameters->transport_protein[i]));
+				} else {
+					scanf("%lf)", &(problem->parameters->transport_protein[i]));
+				}
+				scanf("\r\n%s\r\n", tag);
+			}
+			for (int r = 0; r < repeat - 1; r++) {
+				problem->repeat = r;
+				g_list_foreach (problem->tc_list, (GFunc) integrate, (gpointer) problem);
+				zero_structure (g_list_nth_data (problem->tc_list, 0), problem);
+			}
+			problem->repeat = repeat - 1;
+			g_list_foreach (problem->tc_list, (GFunc) integrate, (gpointer) problem);
+			printf("\r\nfflush\r\n");
+			fflush (stdout);					
+		}
+	} else {
+		for (int r = 0; r < repeat - 1; r++) {
+			problem->repeat = r;
+			g_list_foreach (problem->tc_list, (GFunc) integrate, (gpointer) problem);
+			zero_structure (g_list_nth_data (problem->tc_list, 0), problem);
+		}
+		problem->repeat = repeat - 1;
+		g_list_foreach (problem->tc_list, (GFunc) integrate, (gpointer) problem);
 	}
-	problem->repeat = repeat - 1;
-	g_list_foreach (problem->tc_list, (GFunc) integrate, (gpointer) problem);
 	return (0);
 }
