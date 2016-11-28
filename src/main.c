@@ -1477,17 +1477,71 @@ void add_bias (MSSA_Timeclass *tc, MSSA_Problem *problem)
 
 void score (MSSA_Timeclass *tc, MSSA_Problem *problem)
 {
-	printf("multiscale_ssa %d %d score =", problem->repeat, tc->kounter);
-	double score = 0;
-	for (int i = 0; i < tc->n_nucs; i++) {
-		for (int j = 0; j < problem->n_target_genes; j++) {
-			int k = problem->target_gene_index[j];
+	printf("multiscale_ssa %d %d chisq ", problem->repeat, tc->kounter);
+	for (int j = 0; j < problem->n_target_genes; j++) {
+		printf("g%d =", j);
+		double chisq = 0;
+		int k = problem->target_gene_index[j];
+#pragma omp parallel for schedule(static) default(none) shared(tc, problem, k) reduction(+:chisq)		
+		for (int i = 0; i < tc->n_nucs; i++) {
 			double difference = tc->solution_protein[i * problem->n_tfs + k] - tc->data_protein[i * problem->n_tfs + k] * MOLECULES_PER_CONCENTRATION; 
-			score += difference * difference;
+			chisq += difference * difference;
 		}
+		printf("%15.6f ", chisq);
 	}
-	printf("%15.6f\n", score);
+	printf("\n");
+	printf("multiscale_ssa %d %d corr ", problem->repeat, tc->kounter);
+	for (int j = 0; j < problem->n_target_genes; j++) {
+		printf("g%d =", j);
+		int k = problem->target_gene_index[j];
+		double sx, sy, mx, my, xx, yy, nx, ny, xy, sxy, cxy;
+		sx = sy = mx = my = xx = yy = nx = ny = xy = sxy = cxy = 0;
+#pragma omp parallel for schedule(static) default(none) shared(tc, problem, k) reduction(+:nx) reduction(+:ny) reduction(+:xx) reduction(+:xy) reduction(+:yy)
+		for (int i = 0; i < tc->n_nucs; i++) {
+			nx += tc->solution_protein[i * problem->n_tfs + k];
+			ny += tc->data_protein[i * problem->n_tfs + k];
+			xx += tc->solution_protein[i * problem->n_tfs + k] * tc->solution_protein[i * problem->n_tfs + k];
+			yy += tc->data_protein[i * problem->n_tfs + k] * tc->data_protein[i * problem->n_tfs + k];
+			xy += tc->solution_protein[i * problem->n_tfs + k] * tc->data_protein[i * problem->n_tfs + k];
+		}
+		mx = nx / (double)tc->n_nucs;
+		my = ny / (double)tc->n_nucs;
+		sx = (xx - 2 * mx * nx + mx * mx) / (double)(tc->n_nucs - 1);
+		sy = (yy - 2 * my * ny + my * my) / (double)(tc->n_nucs - 1);
+		sxy = (xy - my * nx - mx * ny + mx * my) / (double)(tc->n_nucs - 1);
+		cxy = (sx > 0 && sy > 0) ? sxy / (sx * sy) : 0;
+		printf("%15.6f ", 1 - cxy);
+//		printf("%15.6f %15.6f ", sx, sy);
+	}
+	printf("\n");
 }
+
+double corr(double *x, double *y, int n, double *mx_ptr, double *my_ptr, double *sx_ptr, double *sy_ptr, double *sxy_ptr)
+{
+	double sx, sy, mx, my, xx, yy, nx, ny, xy, sxy, cxy;
+	sx = sy = mx = my = xx = yy = nx = ny = xy = sxy = cxy = 0;
+#pragma omp parallel for schedule(static) default(none) shared(x, y, n) reduction(+:nx) reduction(+:ny) reduction(+:xx) reduction(+:xy) reduction(+:yy)
+	for (int i = 0; i < n; i++) {
+		nx += x[i];
+		ny += y[i];
+		xx += x[i] * x[i];
+		yy += y[i] * y[i];
+		xy += x[i] * y[i];
+	}
+	mx = nx / (double)n;
+	my = ny / (double)n;
+	sx = (xx - 2 * mx * nx + mx * mx) / (double)(n - 1);
+	sy = (yy - 2 * my * ny + my * my) / (double)(n - 1);
+	sxy = (xy - my * nx - mx * ny + mx * my) / (double)(n - 1);
+	cxy = sxy / (sx * sy);
+	*mx_ptr = mx;
+	*my_ptr = my;
+	*sx_ptr = sx;
+	*sy_ptr = sy;
+	*sxy_ptr = sxy;
+	return cxy;
+}
+
 
 void propagate (MSSA_Timeclass *tc, MSSA_Problem *problem)
 {
