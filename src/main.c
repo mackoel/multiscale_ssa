@@ -34,6 +34,7 @@
 #define MOLECULES_PER_CONCENTRATION 1e1
 #define SYNCH_STEPS_PER_SLOW 20
 #define FAST_TIME_MAX 0.50
+#define FAST_STEPS_FRAC 0.3
 
 #ifdef _OPENMP
 	#include <omp.h>
@@ -204,6 +205,7 @@ typedef struct {
 	int n_nucs; /* number of table rows */
 	GList *tc_list; /* list of MSSA_Timeclass structures */
 	int *n_sites; /* number of sites in the regulatory region for each target gene */
+	int sum_sites; /* total number of sites */
 	MSSA_site ***allele_0; /* sites on the first allele */
 	MSSA_site ***allele_1; /* sites on the second allele */
 	MSSA_Parameters *parameters;
@@ -217,6 +219,9 @@ static char*action;
 static gboolean verbose = FALSE;
 static gboolean dryrun = FALSE;
 static int repeat;
+static int mol_per_conc = MOLECULES_PER_CONCENTRATION;
+static double fast_time_max = FAST_TIME_MAX;
+static double fast_steps_frac = FAST_STEPS_FRAC;
 
 MSSA_Problem *mssa_read_problem(gchar*filename)
 {
@@ -267,9 +272,11 @@ MSSA_Problem *mssa_read_problem(gchar*filename)
 		tc->solution_mrna = g_new0(double, tc->n_nucs * problem->n_tfs);
 		problem->tc_list = g_list_append(problem->tc_list, tc);
 	}
+	problem->sum_sites = 0;
 	problem->n_sites = g_new0(int, problem->n_target_genes);
 	for (int i = 0; i < problem->n_target_genes; i++) {
 		fscanf(fp, "%d", &(problem->n_sites[i]));
+		problem->sum_sites += problem->n_sites[i];
 	}
 	fscanf(fp, "%*s");
 	problem->allele_0 = g_new0(MSSA_site**, problem->n_nucs);
@@ -553,6 +560,7 @@ int mssa_get_reaction_fast_with_buffers(double *solution,
 				if (solution[ap * n_tfs + (*tf)] < 0) {
 					g_warning("fast reaction n %d t %d: ap %d tf %d target %d < 0", reaction_number, (*reaction_type), ap, (*tf), (*target));
 					solution[ap * n_tfs + (*tf)] = 0;
+					(*tau) = TMAX;
 				}
 				break;
 			}
@@ -1469,7 +1477,7 @@ void add_bias (MSSA_Timeclass *tc, MSSA_Problem *problem)
 		for (int j = 0; j < problem->n_target_genes; j++) {
 			int k = problem->target_gene_index[j];
 			tc->solution_mrna[i * problem->n_tfs + k] += tc->data_mrna[i * problem->n_tfs + k];
-			tc->solution_protein[i * problem->n_tfs + k] += tc->data_protein[i * problem->n_tfs + k] * MOLECULES_PER_CONCENTRATION;
+			tc->solution_protein[i * problem->n_tfs + k] += tc->data_protein[i * problem->n_tfs + k] * mol_per_conc;
 		}
 	}
 	if (verbose) mssa_print_timeclass (tc, problem);
@@ -1561,7 +1569,7 @@ void propagate (MSSA_Timeclass *tc, MSSA_Problem *problem)
 	while (t_slow < t_stop_slow) {
 		double t_synch_start = t_slow;
 		double t_synch_stop = t_slow + (t_stop_slow - t_start_slow) / SYNCH_STEPS_PER_SLOW;
-#pragma omp parallel for schedule(static) default(none) shared(problem, tc, t_synch_start, t_synch_stop)
+#pragma omp parallel for schedule(static) default(none) shared(problem, tc, t_synch_start, t_synch_stop, fast_time_max)
 		for (int ap = 0; ap < tc->n_nucs; ap++) {
 			double t_synch = t_synch_start;
 			int synch_iter_kounter = 0;
@@ -1573,7 +1581,7 @@ void propagate (MSSA_Timeclass *tc, MSSA_Problem *problem)
 				double t_stop_fast;
 				double t_fast;
 				t_start_fast = 0;
-				t_stop_fast = FAST_TIME_MAX;
+				t_stop_fast = fast_time_max;
 				/* Allele_0 */
 				t_fast = t_start_fast;
 				inner_iter_kounter = 0;
@@ -1743,16 +1751,16 @@ void propagate_with_transport (MSSA_Timeclass *tc, MSSA_Problem *problem)
 		int reaction_type_slow, promoter_number_slow;
 		int nuc_number_slow;
 		if (slow_only == 0) { /* interphase */
-#pragma omp parallel for schedule(static) default(none) shared(problem, tc, propensity_fast, probability_fast) reduction(+:inner_iter_kounter)
+#pragma omp parallel for schedule(static) default(none) shared(problem, tc, propensity_fast, probability_fast, fast_time_max, fast_steps_frac) reduction(+:inner_iter_kounter)
 			for (int ap = 0; ap < tc->n_nucs; ap++) {
 				double t_start_fast;
 				double t_stop_fast;
 				double t_fast;
 				t_start_fast = 0;
-				t_stop_fast = FAST_TIME_MAX;
+				t_stop_fast = fast_time_max;
 				t_fast = t_start_fast;
-/*				inner_iter_kounter = 0;*/
-				while (t_fast < t_stop_fast) {
+				for (int l = 0; l < (int)(problem->sum_sites * fast_steps_frac); l++) {
+/*				while (t_fast < t_stop_fast) {*/
 					double tau_fast;
 					int promoter_number, tf;
 					int site_number;
@@ -1776,6 +1784,7 @@ void propagate_with_transport (MSSA_Timeclass *tc, MSSA_Problem *problem)
 					//					printf("multiscale_ssa %d a0 %f %f %f %d\n", ap, t_synch, t_fast, tau_fast, reaction_number);
 					t_fast += tau_fast;
 					inner_iter_kounter++;
+					if (t_fast > t_stop_fast) break;
 				}
 			}
 		}
@@ -1856,11 +1865,11 @@ void propagate_with_transport (MSSA_Timeclass *tc, MSSA_Problem *problem)
 void inject (MSSA_Timeclass *tc, MSSA_Problem *problem)
 {
 	if (verbose) printf("multiscale_ssa inject %d\n", tc->kounter);
-#pragma omp parallel for collapse(2) schedule(static) default(none) shared(problem, tc)
+#pragma omp parallel for collapse(2) schedule(static) default(none) shared(problem, tc, mol_per_conc)
 	for (int i = 0; i < tc->n_nucs; i++) {
 		for (int j = 0; j < problem->n_external_genes; j++) {
 			int k = problem->external_gene_index[j];
-			double conc = tc->data_protein[i * problem->n_tfs + k] * MOLECULES_PER_CONCENTRATION - tc->bound_protein[i * problem->n_tfs + k];
+			double conc = tc->data_protein[i * problem->n_tfs + k] * mol_per_conc - tc->bound_protein[i * problem->n_tfs + k];
 			tc->solution_protein[i * problem->n_tfs + k] = MAX(conc, 0);
 		}
 	}
@@ -2083,7 +2092,10 @@ static GOptionEntry entries[] =
 	{ "logfile", 'l', 0, G_OPTION_ARG_STRING, &log_file, N_("File name for progress"), N_("FILENAME") },
 	{ "outfile", 'o', 0, G_OPTION_ARG_STRING, &out_file, N_("File name for concentrations"), N_("FILENAME") },
 	{ "action", 'a', 0, G_OPTION_ARG_STRING, &action, N_("What to do"), N_("OPERATION") },
-	{ "repeat", 'r', 1, G_OPTION_ARG_INT, &repeat, N_("Number of repeats"), N_("REPEAT") },
+	{ "repeat", 'r', 0, G_OPTION_ARG_INT, &repeat, N_("Number of repeats"), N_("REPEAT") },
+	{ "molperconc", 'm', 0, G_OPTION_ARG_INT, &mol_per_conc, N_("Number of molecules per concentration unit"), N_("MOL") },
+	{ "fasttimemax", 't', 0, G_OPTION_ARG_DOUBLE, &fast_time_max, N_("Fast time limit"), N_("FASTTIME") },
+	{ "faststepsfrac", 's', 0, G_OPTION_ARG_DOUBLE, &fast_steps_frac, N_("Fraction of fast steps"), N_("FRAC") },
 	{ "verbose", 'v', 0, G_OPTION_ARG_NONE, &verbose, N_("verbose"), N_("VERBOSE") },
 	{ "version", 'V', G_OPTION_FLAG_NO_ARG | G_OPTION_FLAG_HIDDEN, G_OPTION_ARG_CALLBACK, option_version_cb, NULL, NULL },
 	{ NULL }
