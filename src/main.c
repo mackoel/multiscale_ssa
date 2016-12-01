@@ -67,7 +67,7 @@ int ssa_prepare(int *species, int *stoichiometric_matrix, double *tau, double *p
 		prop_sum += propensity[i];
 	}
 	if (prop_sum <= 0.00000000001) {
-		g_warning("Sum of propensities is too small %g!", prop_sum); 
+		g_warning("Sum of propensities is too small %g!", prop_sum);
 		(*tau) = TMAX;
 		g_free(propensity);
 		g_free(probability);
@@ -236,7 +236,7 @@ MSSA_Problem *mssa_read_problem(gchar*filename)
 		fscanf(fp, "%d", &(problem->target_gene_index[i]));
 	}
 	fscanf(fp, "%d", &(problem->n_tfs));
-	problem->n_external_genes = problem->n_tfs - problem->n_target_genes; 
+	problem->n_external_genes = problem->n_tfs - problem->n_target_genes;
 	problem->external_gene_index = g_new0(int, problem->n_external_genes);
 	for (int i = 0; i < problem->n_external_genes; i++) {
 		fscanf(fp, "%d", &(problem->external_gene_index[i]));
@@ -287,8 +287,8 @@ MSSA_Problem *mssa_read_problem(gchar*filename)
 		problem->allele_0[0][i] = g_new0(MSSA_site, problem->n_sites[i]);
 		problem->allele_1[0][i] = g_new0(MSSA_site, problem->n_sites[i]);
 		for (int j = 0; j < problem->n_sites[i]; j++) {
-			fscanf(fp, "%d %*c %d %*f %d %lf", &(problem->allele_0[0][i][j].coordinate), 
-			       &(problem->allele_0[0][i][j].tf_index), &(problem->allele_0[0][i][j].length), 
+			fscanf(fp, "%d %*c %d %*f %d %lf", &(problem->allele_0[0][i][j].coordinate),
+			       &(problem->allele_0[0][i][j].tf_index), &(problem->allele_0[0][i][j].length),
 			       &(problem->allele_0[0][i][j].energy));
 			problem->allele_0[0][i][j].status = 0;
 			problem->allele_1[0][i][j] = problem->allele_0[0][i][j];
@@ -324,17 +324,18 @@ MSSA_Problem *mssa_read_problem(gchar*filename)
 		fscanf(fp, "%lf", &(problem->parameters->transport_mrna[i]));
 		fscanf(fp, "%lf", &(problem->parameters->transport_protein[i]));
 	}
+	fscanf(fp, "%lf", &(problem->parameters->range));
 	return(problem);
 }
 
-/* Stoichiometric matrix for fast reactions 
+/* Stoichiometric matrix for fast reactions
  * reaction	 allele_0[i] allele_1[i] tf[k]
  * bind_tf[j]
  * unbind_tf[j]
  */
 
 /* Stoichiometric matrix for slow reactions
- * reaction 
+ * reaction
  * traslation
  * transcription
  * degradation
@@ -343,14 +344,14 @@ MSSA_Problem *mssa_read_problem(gchar*filename)
 int mssa_get_reaction_fast(double *solution,
                            double *bound,
                            MSSA_site ***allele,
-                           double *tau, 
-                           int *reaction_type, 
-                           int *tf, 
-                           int *target, 
+                           double *tau,
+                           int *reaction_type,
+                           int *tf,
+                           int *target,
                            int *site_number,
                            int *n_sites,
-                           int n_tfs, 
-                           int n_target_genes, 
+                           int n_tfs,
+                           int n_target_genes,
                            int ap)
 {
 	int i, j, k, reaction_number, s, l;
@@ -360,7 +361,7 @@ int mssa_get_reaction_fast(double *solution,
 	double prop_sum = 0;
 	double random = g_rand_double (grand);
 //	fprintf(stdout, "fast %d!\n", ap);
-	int number_of_reactions = 2 * n_tfs * n_target_genes; /* bind/unbind each tf in each promotor */ 
+	int number_of_reactions = 2 * n_tfs * n_target_genes; /* bind/unbind each tf in each promotor */
 	propensity = g_new0(double, number_of_reactions);
 	probability = g_new0(double, number_of_reactions);
 /* Binding */
@@ -389,7 +390,7 @@ int mssa_get_reaction_fast(double *solution,
 
 	}
 	if (prop_sum <= 0.00000000001) {
-		g_warning("fast %d: Sum of propensities is too small %g!", ap, prop_sum); 
+		g_warning("fast %d: Sum of propensities is too small %g!", ap, prop_sum);
 		(*tau) = TMAX;
 		g_free(propensity);
 		g_free(probability);
@@ -462,15 +463,15 @@ int mssa_get_reaction_fast_with_buffers(double *solution,
                                         double *bound,
                                         MSSA_site ***allele,
                                         double *propensity,
-                                        double *probability,                                        
-                                        double *tau, 
-                                        int *reaction_type, 
-                                        int *tf, 
-                                        int *target, 
+                                        double *probability,
+                                        double *tau,
+                                        int *reaction_type,
+                                        int *tf,
+                                        int *target,
                                         int *site_number,
                                         int *n_sites,
-                                        int n_tfs, 
-                                        int n_target_genes, 
+                                        int n_tfs,
+                                        int n_target_genes,
                                         int ap)
 {
 	int i, j, k, reaction_number, s, l;
@@ -503,7 +504,7 @@ int mssa_get_reaction_fast_with_buffers(double *solution,
 
 	}
 	if (prop_sum <= 0.00000000001) {
-		g_warning("fast %d: Sum of propensities is too small %g!", ap, prop_sum); 
+		g_warning("fast %d: Sum of propensities is too small %g!", ap, prop_sum);
 		(*tau) = TMAX;
 		(*target) = -1;
 		(*tf) = -1;
@@ -594,40 +595,66 @@ int mssa_get_reaction_fast_with_buffers_2(double *solution,
                                           MSSA_site ***allele_0,
                                           MSSA_site ***allele_1,
                                           double *propensity,
-                                          double *probability,                                        
-                                          double *tau, 
-                                          int *reaction_type, 
-                                          int *tf, 
-                                          int *target, 
+                                          double *probability,
+                                          double *tau,
+                                          int *reaction_type,
+                                          int *tf,
+                                          int *target,
                                           int *site_number,
                                           int *n_sites,
-                                          int n_tfs, 
-                                          int n_target_genes, 
+                                          int n_tfs,
+                                          int n_target_genes,
+                                          double *parameters,
+                                          double range,
                                           int ap)
 {
 	int i, j, k, reaction_number, s, l, found, allele;
 	double aggregate;
 	double prop_sum = 0;
 	double random = g_rand_double (grand);
+	int **site_tab_bind_0, **site_tab_bind_1, **site_tab_unbind_0, **site_tab_unbind_1;
+	site_tab_bind_0 = g_new0(int*, n_target_genes);
 /* Binding */
 	for (i = 0; i < n_target_genes; i++) {
+		site_tab_bind_0[i] = g_new0(int, n_tfs);
 		for (j = 0; j < n_tfs; j++) {
 			double prop = 0; /* Sum of energies of free bs */
 			reaction_number = i * n_tfs + j;
+			l = g_rand_int_range (grand, 0, n_sites[i]);
+			s = l;
 			for (k = 0; k < n_sites[i]; k++) {
-				prop += (allele_0[ap][i][k].status == 0 && allele_0[ap][i][k].tf_index == j) ? allele_0[ap][i][k].energy : 0;
+				if (allele_0[ap][i][s].status == 0 && allele_0[ap][i][s].tf_index == j) {
+					prop += allele_0[ap][i][s].energy;
+					site_tab_bind_0[i][j] = s;
+				}
+				s++;
+				if (s > n_sites[i] - 1) {
+					s = 0;
+				}
 			}
 			propensity[reaction_number] = solution[ap * n_tfs + j] * prop;
 			prop_sum += propensity[reaction_number];
 		}
 
 	}
+	site_tab_bind_1 = g_new0(int*, n_target_genes);
 	for (i = 0; i < n_target_genes; i++) {
 		for (j = 0; j < n_tfs; j++) {
+			site_tab_bind_1[i] = g_new0(int, n_tfs);
 			double prop = 0; /* Sum of energies of free bs */
 			reaction_number = n_tfs * n_target_genes + i * n_tfs + j;
+			l = g_rand_int_range (grand, 0, n_sites[i]);
+			s = l;
 			for (k = 0; k < n_sites[i]; k++) {
-				prop += (allele_1[ap][i][k].status == 0 && allele_1[ap][i][k].tf_index == j) ? allele_1[ap][i][k].energy : 0;
+				prop += (allele_1[ap][i][s].status == 0 && allele_1[ap][i][s].tf_index == j) ? allele_1[ap][i][k].energy : 0;
+				if (allele_1[ap][i][s].status == 0 && allele_1[ap][i][s].tf_index == j) {
+					prop += allele_1[ap][i][s].energy;
+					site_tab_bind_1[i][j] = s;
+				}
+				s++;
+				if (s > n_sites[i] - 1) {
+					s = 0;
+				}
 			}
 			propensity[reaction_number] = solution[ap * n_tfs + j] * prop;
 			prop_sum += propensity[reaction_number];
@@ -635,27 +662,49 @@ int mssa_get_reaction_fast_with_buffers_2(double *solution,
 
 	}
 /* Unbinding */
+	site_tab_unbind_0 = g_new0(int*, n_target_genes);
 	for (i = 0; i < n_target_genes; i++) {
+		site_tab_unbind_0[i] = g_new0(int, n_tfs);
 		for (j = 0; j < n_tfs; j++) {
 			double prop = 0; /* Sum of energies of bound bs */
 			reaction_number = 2 * n_tfs * n_target_genes + i * n_tfs + j;
+			l = g_rand_int_range (grand, 0, n_sites[i]);
+			s = l;
 			for (k = 0; k < n_sites[i]; k++) {
-				prop += (allele_0[ap][i][k].status == 1 && allele_0[ap][i][k].tf_index == j) ? allele_0[ap][i][k].energy : 0;
+				prop += (allele_0[ap][i][s].status == 1 && allele_0[ap][i][s].tf_index == j) ? allele_0[ap][i][s].energy : 0;
+				if (allele_0[ap][i][s].status == 1 && allele_0[ap][i][s].tf_index == j) {
+					prop += allele_0[ap][i][s].energy;
+					site_tab_unbind_0[i][j] = s;
+				}
+				s++;
+				if (s > n_sites[i] - 1) {
+					s = 0;
+				}
 			}
-//			propensity[n_tfs * n_target_genes + i * n_tfs + j] = solution[ap * n_tfs + j] * prop;
 			propensity[reaction_number] = bound[ap * n_tfs + j] * prop;
 			prop_sum += propensity[reaction_number];
 		}
 
 	}
+	site_tab_unbind_1 = g_new0(int*, n_target_genes);
 	for (i = 0; i < n_target_genes; i++) {
+		site_tab_unbind_1[i] = g_new0(int, n_tfs);
 		for (j = 0; j < n_tfs; j++) {
 			double prop = 0; /* Sum of energies of bound bs */
 			reaction_number = 3 * n_tfs * n_target_genes + i * n_tfs + j;
+			l = g_rand_int_range (grand, 0, n_sites[i]);
+			s = l;
 			for (k = 0; k < n_sites[i]; k++) {
-				prop += (allele_1[ap][i][k].status == 1 && allele_1[ap][i][k].tf_index == j) ? allele_1[ap][i][k].energy : 0;
+				prop += (allele_1[ap][i][s].status == 1 && allele_1[ap][i][s].tf_index == j) ? allele_1[ap][i][s].energy : 0;
+				if (allele_1[ap][i][s].status == 1 && allele_1[ap][i][s].tf_index == j) {
+					prop += allele_1[ap][i][s].energy;
+					site_tab_unbind_1[i][j] = s;
+				}
+				s++;
+				if (s > n_sites[i] - 1) {
+					s = 0;
+				}
 			}
-//			propensity[n_tfs * n_target_genes + i * n_tfs + j] = solution[ap * n_tfs + j] * prop;
 			propensity[reaction_number] = bound[ap * n_tfs + j] * prop;
 			prop_sum += propensity[reaction_number];
 		}
@@ -688,6 +737,16 @@ int mssa_get_reaction_fast_with_buffers_2(double *solution,
 		(*tf) = -1;
 		(*reaction_type) = -1;
 		(*site_number) = -1;
+		for (i = 0; i < n_target_genes; i++) {
+			g_free(site_tab_bind_0[i]);
+			g_free(site_tab_bind_1[i]);
+			g_free(site_tab_unbind_0[i]);
+			g_free(site_tab_unbind_1[i]);
+		}
+		g_free(site_tab_bind_0);
+		g_free(site_tab_bind_1);
+		g_free(site_tab_unbind_0);
+		g_free(site_tab_unbind_1);
 		return(-1);
 	}
 	found = 0;
@@ -766,70 +825,105 @@ int mssa_get_reaction_fast_with_buffers_2(double *solution,
 	}
 	(*tau) = -log(g_rand_double (grand)) / prop_sum;
 	(*site_number) = -1;
-	l = floor(g_rand_double (grand) * n_sites[(*target)]);
 	if (found == 1) {
-		s = l;
 		if (allele == 0) {
-			for (k = 0; k < n_sites[(*target)]; k++) {
-				/* Looking for a bound/unbound site */
-				if (allele_0[ap][(*target)][s].status == (1 - (*reaction_type))) {
-					(*site_number) = s;
-					allele_0[ap][(*target)][s].status = (*reaction_type);
-					solution[ap * n_tfs + (*tf)] += ((*reaction_type) == 1) ? -1 : 1;
-					bound[ap * n_tfs + (*tf)] -= ((*reaction_type) == 1) ? -1 : 1;
-					if (solution[ap * n_tfs + (*tf)] < 0) {
-						g_warning("fast reaction n %d t %d: ap %d tf %d target %d < 0", reaction_number, (*reaction_type), ap, (*tf), (*target));
-						solution[ap * n_tfs + (*tf)] = 0;
-					}
-					/* allelle, nuc, gen, cur, type, block */
-					mssa_check_site_overlap (allele_0, ap, (*target), s, 0, ((*reaction_type) == 1) ? -1 : 0);
-					break;
+			if ((*reaction_type) == 1) { /* Binding */
+				s = site_tab_bind_0[(*target)][(*tf)];
+				(*site_number) = s;
+				allele_0[ap][(*target)][s].status = 1;
+				solution[ap * n_tfs + (*tf)] += -1;
+				bound[ap * n_tfs + (*tf)] -= -1;
+				if (solution[ap * n_tfs + (*tf)] < 0) {
+					g_warning("fast bind reaction n %d t %d: ap %d tf %d target %d < 0", reaction_number, (*reaction_type), ap, (*tf), (*target));
+					solution[ap * n_tfs + (*tf)] = 0;
 				}
-				s++;
-				if (s > n_sites[(*target)] - 1) {
-					s = 0;
+			/* allelle, nuc, gen, cur, type, block */
+				if (parameters[(*target) * n_tfs + (*tf)] < 0 && range > 0) {
+					mssa_check_site_overlap (allele_0, ap, (*target), s, 0, -1);
+				} else {
+					mssa_check_site_overlap (allele_0, ap, (*target), s, 1, -1);
+				}
+			} else { /* Unbinding */
+				s = site_tab_unbind_0[(*target)][(*tf)];
+				(*site_number) = s;
+				allele_0[ap][(*target)][s].status = 0;
+				solution[ap * n_tfs + (*tf)] += 1;
+				bound[ap * n_tfs + (*tf)] -= 1;
+				if (bound[ap * n_tfs + (*tf)] < 0) {
+					g_warning("fast unbind reaction n %d t %d: ap %d tf %d target %d < 0", reaction_number, (*reaction_type), ap, (*tf), (*target));
+					bound[ap * n_tfs + (*tf)] = 0;
+				}
+			/* allelle, nuc, gen, cur, type, block */
+				if (parameters[(*target) * n_tfs + (*tf)] < 0 && range > 0) {
+					mssa_check_site_overlap (allele_0, ap, (*target), s, 0, 0);
+				} else {
+					mssa_check_site_overlap (allele_0, ap, (*target), s, 1, 0);
 				}
 			}
 		}
 		if (allele == 1) {
-			for (k = 0; k < n_sites[(*target)]; k++) {
-				/* Looking for a bound/unbound site */
-				if (allele_1[ap][(*target)][s].status == (1 - (*reaction_type))) {
-					(*site_number) = s;
-					allele_1[ap][(*target)][s].status = (*reaction_type);
-					solution[ap * n_tfs + (*tf)] += ((*reaction_type) == 1) ? -1 : 1;
-					bound[ap * n_tfs + (*tf)] -= ((*reaction_type) == 1) ? -1 : 1;
-					if (solution[ap * n_tfs + (*tf)] < 0) {
-						g_warning("fast reaction n %d t %d: ap %d tf %d target %d < 0", reaction_number, (*reaction_type), ap, (*tf), (*target));
-						solution[ap * n_tfs + (*tf)] = 0;
-					}
-					mssa_check_site_overlap (allele_1, ap, (*target), s, 0, ((*reaction_type) == 1) ? -1 : 0);
-					break;
+			if ((*reaction_type) == 1) { /* Binding */
+				s = site_tab_bind_1[(*target)][(*tf)];
+				(*site_number) = s;
+				allele_1[ap][(*target)][s].status = 1;
+				solution[ap * n_tfs + (*tf)] += -1;
+				bound[ap * n_tfs + (*tf)] -= -1;
+				if (solution[ap * n_tfs + (*tf)] < 0) {
+					g_warning("fast bind reaction n %d t %d: ap %d tf %d target %d < 0", reaction_number, (*reaction_type), ap, (*tf), (*target));
+					solution[ap * n_tfs + (*tf)] = 0;
 				}
-				s++;
-				if (s > n_sites[(*target)] - 1) {
-					s = 0;
+			/* allelle, nuc, gen, cur, type, block */
+				if (parameters[(*target) * n_tfs + (*tf)] < 0 && range > 0) {
+					mssa_check_site_overlap (allele_1, ap, (*target), s, 0, -1);
+				} else {
+					mssa_check_site_overlap (allele_1, ap, (*target), s, 1, -1);
+				}
+			} else { /* Unbinding */
+				s = site_tab_unbind_1[(*target)][(*tf)];
+				(*site_number) = s;
+				allele_0[ap][(*target)][s].status = 0;
+				solution[ap * n_tfs + (*tf)] += 1;
+				bound[ap * n_tfs + (*tf)] -= 1;
+				if (bound[ap * n_tfs + (*tf)] < 0) {
+					g_warning("fast unbind reaction n %d t %d: ap %d tf %d target %d < 0", reaction_number, (*reaction_type), ap, (*tf), (*target));
+					bound[ap * n_tfs + (*tf)] = 0;
+				}
+			/* allelle, nuc, gen, cur, type, block */
+				if (parameters[(*target) * n_tfs + (*tf)] < 0 && range > 0) {
+					mssa_check_site_overlap (allele_1, ap, (*target), s, 0, 0);
+				} else {
+					mssa_check_site_overlap (allele_1, ap, (*target), s, 1, 0);
 				}
 			}
 		}
 	}
+	for (i = 0; i < n_target_genes; i++) {
+		g_free(site_tab_bind_0[i]);
+		g_free(site_tab_bind_1[i]);
+		g_free(site_tab_unbind_0[i]);
+		g_free(site_tab_unbind_1[i]);
+	}
+	g_free(site_tab_bind_0);
+	g_free(site_tab_bind_1);
+	g_free(site_tab_unbind_0);
+	g_free(site_tab_unbind_1);
 	return (reaction_number);
 }
-                           
-int mssa_get_reaction_slow(double *solution_mrna, 
-                           double *solution_protein, 
-                           MSSA_site ***allele_0, 
+
+int mssa_get_reaction_slow(double *solution_mrna,
+                           double *solution_protein,
+                           MSSA_site ***allele_0,
                            MSSA_site ***allele_1,
-                           double *tau, 
-                           int *reaction_type, 
-                           int *target, 
+                           double *tau,
+                           int *reaction_type,
+                           int *target,
                            int *target_gene_index,
-                           int *n_sites, 
-                           double *T, 
-                           double *protein_degradation, 
-                           double *mrna_degradation, 
+                           int *n_sites,
+                           double *T,
+                           double *protein_degradation,
+                           double *mrna_degradation,
                            double *translation,
-                           int n_tfs, 
+                           int n_tfs,
                            int n_target_genes,
                            int interphase,
                            int ap)
@@ -840,10 +934,10 @@ int mssa_get_reaction_slow(double *solution_mrna,
 	double aggregate;
 	double prop_sum = 0;
 	double random = g_rand_double (grand);
-	int number_of_reactions = 2 * n_target_genes + /* transcription */ 
+	int number_of_reactions = 2 * n_target_genes + /* transcription */
 		n_target_genes + /* translation */
 		n_target_genes + /* degradation mrna */
-		n_target_genes; /* degradation protein */ 
+		n_target_genes; /* degradation protein */
 	propensity = g_new0(double, number_of_reactions);
 	probability = g_new0(double, number_of_reactions);
 	if (interphase == 1) {
@@ -894,7 +988,7 @@ int mssa_get_reaction_slow(double *solution_mrna,
 		prop_sum += propensity[4 * n_target_genes + i];
 	}
 	if (prop_sum <= 0.00000000001) {
-		g_warning("slow Sum of propensities is too small %g!", prop_sum); 
+		g_warning("slow Sum of propensities is too small %g!", prop_sum);
 		(*tau) = TMAX;
 		g_free(propensity);
 		g_free(probability);
@@ -1002,27 +1096,27 @@ int mssa_get_reaction_slow(double *solution_mrna,
 	return (reaction_number);
 }
 
-int mssa_get_reaction_slow_with_transport(double *solution_mrna, 
-                                          double *solution_protein, 
-                                          MSSA_site ***allele_0, 
+int mssa_get_reaction_slow_with_transport(double *solution_mrna,
+                                          double *solution_protein,
+                                          MSSA_site ***allele_0,
                                           MSSA_site ***allele_1,
-                                          double *tau, 
-                                          int *reaction_type, 
-                                          int *target, 
+                                          double *tau,
+                                          int *reaction_type,
+                                          int *target,
                                           int *nuc,
                                           int *target_gene_index,
-                                          int *n_sites, 
+                                          int *n_sites,
                                           double *propensity,
                                           double *probability,
                                           int number_of_reactions_per_nuc,
                                           int number_of_reactions,
-                                          double *T, 
-                                          double *protein_degradation, 
-                                          double *mrna_degradation, 
+                                          double *T,
+                                          double *protein_degradation,
+                                          double *mrna_degradation,
                                           double *translation,
                                           double *transport_mrna,
                                           double *transport_protein,
-                                          int n_tfs, 
+                                          int n_tfs,
                                           int n_target_genes,
                                           int n_nucs,
                                           int interphase)
@@ -1142,7 +1236,7 @@ int mssa_get_reaction_slow_with_transport(double *solution_mrna,
 		prop_sum += propensity[reaction_number];
 	}
 	if (prop_sum <= 0.00000000001) {
-		g_warning("slow Sum of propensities is too small %g!", prop_sum); 
+		g_warning("slow Sum of propensities is too small %g!", prop_sum);
 		(*tau) = TMAX;
 		(*target) = -1;
 		(*reaction_type) = -1;
@@ -1363,7 +1457,7 @@ int mssa_get_reaction_slow_with_transport(double *solution_mrna,
 		break;
 		case 6: /* left transport mrna */
 			k = target_gene_index[reaction_target];
-			if ((reaction_nuc - 1) > -1) {		
+			if ((reaction_nuc - 1) > -1) {
 				solution_mrna[(reaction_nuc - 1) * n_tfs + k]--;
 				solution_mrna[reaction_nuc * n_tfs + k]++;
 				if (solution_mrna[(reaction_nuc - 1) * n_tfs + k] < 0) {
@@ -1422,21 +1516,21 @@ int mssa_get_reaction_slow_with_transport(double *solution_mrna,
 
 void mssa_print_timeclass (MSSA_Timeclass *tc, MSSA_Problem *problem)
 {
-	fprintf(stdout, "%d time %f %f protein:\n", problem->repeat, tc->t_start, tc->t_end); 
+	fprintf(stdout, "%d time %f %f protein:\n", problem->repeat, tc->t_start, tc->t_end);
 	for (int i = 0; i < tc->n_nucs; i++) {
 		for (int j = 0; j < problem->n_tfs; j++) {
 			fprintf(stdout, "%f ", tc->solution_protein[i * problem->n_tfs + j]);
 		}
 		fprintf(stdout, "\n");
 	}
-	fprintf(stdout, "time %f %f bound:\n", tc->t_start, tc->t_end); 
+	fprintf(stdout, "time %f %f bound:\n", tc->t_start, tc->t_end);
 	for (int i = 0; i < tc->n_nucs; i++) {
 		for (int j = 0; j < problem->n_tfs; j++) {
 			fprintf(stdout, "%f ", tc->bound_protein[i * problem->n_tfs + j]);
 		}
 		fprintf(stdout, "\n");
 	}
-	fprintf(stdout, "time %f %f mrna:\n", tc->t_start, tc->t_end); 
+	fprintf(stdout, "time %f %f mrna:\n", tc->t_start, tc->t_end);
 	for (int i = 0; i < tc->n_nucs; i++) {
 		for (int j = 0; j < problem->n_tfs; j++) {
 			fprintf(stdout, "%f ", tc->solution_mrna[i * problem->n_tfs + j]);
@@ -1445,9 +1539,9 @@ void mssa_print_timeclass (MSSA_Timeclass *tc, MSSA_Problem *problem)
 	}
 }
 
-/* Use this func 
- * to print the result of propagation, 
- * hence end time is printed. 
+/* Use this func
+ * to print the result of propagation,
+ * hence end time is printed.
  * Free and bound proteins are summed.
  */
 
@@ -1491,9 +1585,9 @@ void score (MSSA_Timeclass *tc, MSSA_Problem *problem)
 		printf("g%d =", j);
 		double chisq = 0;
 		int k = problem->target_gene_index[j];
-#pragma omp parallel for schedule(static) default(none) shared(tc, problem, k, n) reduction(+:chisq)		
+#pragma omp parallel for schedule(static) default(none) shared(tc, problem, k, n) reduction(+:chisq)
 		for (int i = 0; i < n; i++) {
-			double difference = tc->solution_protein[i * problem->n_tfs + k] + tc->bound_protein[i * problem->n_tfs + k] - tc->data_protein[i * problem->n_tfs + k] * MOLECULES_PER_CONCENTRATION; 
+			double difference = tc->solution_protein[i * problem->n_tfs + k] + tc->bound_protein[i * problem->n_tfs + k] - tc->data_protein[i * problem->n_tfs + k] * MOLECULES_PER_CONCENTRATION;
 			chisq += difference * difference;
 		}
 		printf("%15.6f ", chisq);
@@ -1508,7 +1602,7 @@ void score (MSSA_Timeclass *tc, MSSA_Problem *problem)
 #pragma omp parallel for schedule(static) default(none) shared(tc, problem, k, n) reduction(+:nx) reduction(+:ny) reduction(+:xx) reduction(+:xy) reduction(+:yy)
 		for (int i = 0; i < n; i++) {
 			double x = tc->solution_protein[i * problem->n_tfs + k] + tc->bound_protein[i * problem->n_tfs + k];
-			double y = tc->data_protein[i * problem->n_tfs + k]; 
+			double y = tc->data_protein[i * problem->n_tfs + k];
 			nx += x;
 			ny += y;
 			xx += x * x;
@@ -1593,15 +1687,15 @@ void propagate (MSSA_Timeclass *tc, MSSA_Problem *problem)
 					int reaction_number;
 					reaction_number = mssa_get_reaction_fast(tc->solution_protein,
 					                                         tc->bound_protein,
-					                                         problem->allele_0, 
-					                                         &tau_fast, 
-					                                         &reaction_type, 
-					                                         &tf, 
-					                                         &promoter_number, 
+					                                         problem->allele_0,
+					                                         &tau_fast,
+					                                         &reaction_type,
+					                                         &tf,
+					                                         &promoter_number,
 					                                         &site_number,
-					                                         problem->n_sites, 
-					                                         problem->n_tfs, 
-					                                         problem->n_target_genes, 
+					                                         problem->n_sites,
+					                                         problem->n_tfs,
+					                                         problem->n_target_genes,
 					                                         ap);
 //					printf("multiscale_ssa %d a0 %f %f %f %d\n", ap, t_synch, t_fast, tau_fast, reaction_number);
 					t_fast += tau_fast;
@@ -1616,37 +1710,37 @@ void propagate (MSSA_Timeclass *tc, MSSA_Problem *problem)
 					int site_number;
 					int reaction_type;
 					int reaction_number;
-					reaction_number = mssa_get_reaction_fast(tc->solution_protein, 
+					reaction_number = mssa_get_reaction_fast(tc->solution_protein,
 					                                         tc->bound_protein,
-					                                         problem->allele_1, 
-					                                         &tau_fast, 
+					                                         problem->allele_1,
+					                                         &tau_fast,
 					                                         &reaction_type,
 					                                         &tf,
 					                                         &promoter_number,
 					                                         &site_number,
 					                                         problem->n_sites,
-					                                         problem->n_tfs, 
+					                                         problem->n_tfs,
 					                                         problem->n_target_genes,
 					                                         ap);
 //					printf("multiscale_ssa %d a1 %f %f %f %d\n", ap, t_synch, t_fast, tau_fast, reaction_number);
 					t_fast += tau_fast;
 					inner_iter_kounter++;
 				}
-				reaction_number_slow = mssa_get_reaction_slow(tc->solution_mrna, 
-				                                              tc->solution_protein, 
-				                                              problem->allele_0, 
-				                                              problem->allele_1, 
+				reaction_number_slow = mssa_get_reaction_slow(tc->solution_mrna,
+				                                              tc->solution_protein,
+				                                              problem->allele_0,
+				                                              problem->allele_1,
 				                                              &tau_synch,
-				                                              &reaction_type_slow, 
-				                                              &promoter_number_slow, 
+				                                              &reaction_type_slow,
+				                                              &promoter_number_slow,
 				                                              problem->target_gene_index,
 				                                              problem->n_sites,
 				                                              problem->parameters->T,
-				                                              problem->parameters->protein_degradation, 
+				                                              problem->parameters->protein_degradation,
 				                                              problem->parameters->mrna_degradation,
 				                                              problem->parameters->translation,
-				                                              problem->n_tfs, 
-				                                              problem->n_target_genes, 
+				                                              problem->n_tfs,
+				                                              problem->n_target_genes,
 				                                              1,
 				                                              ap);
 				printf("multiscale_ssa synch %d %d t %f %f %d %d fast %d\n", ap, synch_iter_kounter, t_synch, tau_synch, reaction_number_slow, reaction_type_slow, inner_iter_kounter);
@@ -1682,20 +1776,20 @@ void propagate_slow_only (MSSA_Timeclass *tc, MSSA_Problem *problem)
 				double tau_synch;
 				int reaction_number_slow;
 				int reaction_type_slow, promoter_number_slow;
-				reaction_number_slow = mssa_get_reaction_slow(tc->solution_mrna, 
-				                                              tc->solution_protein, 
-				                                              problem->allele_0, 
-				                                              problem->allele_1, 
+				reaction_number_slow = mssa_get_reaction_slow(tc->solution_mrna,
+				                                              tc->solution_protein,
+				                                              problem->allele_0,
+				                                              problem->allele_1,
 				                                              &tau_synch,
-				                                              &reaction_type_slow, 
-				                                              &promoter_number_slow, 
+				                                              &reaction_type_slow,
+				                                              &promoter_number_slow,
 				                                              problem->target_gene_index,
 				                                              problem->n_sites,
 				                                              problem->parameters->T,
-				                                              problem->parameters->protein_degradation, 
+				                                              problem->parameters->protein_degradation,
 				                                              problem->parameters->mrna_degradation,
 				                                              problem->parameters->translation,
-				                                              problem->n_tfs, 
+				                                              problem->n_tfs,
 				                                              problem->n_target_genes,
 				                                              0,
 				                                              ap);
@@ -1719,7 +1813,7 @@ void propagate_with_transport (MSSA_Timeclass *tc, MSSA_Problem *problem)
 	double *probability;
 	int number_of_reactions_per_nuc;
 	int number_of_reactions;
-	number_of_reactions_per_nuc = 2 * problem->n_target_genes + /* transcription */ 
+	number_of_reactions_per_nuc = 2 * problem->n_target_genes + /* transcription */
 		problem->n_target_genes + /* translation */
 		problem->n_target_genes + /* degradation mrna */
 		problem->n_target_genes + /* degradation protein */
@@ -1772,14 +1866,16 @@ void propagate_with_transport (MSSA_Timeclass *tc, MSSA_Problem *problem)
 					                                                         problem->allele_1,
 					                                                         propensity_fast[ap],
 					                                                         probability_fast[ap],
-					                                                         &tau_fast, 
-					                                                         &reaction_type, 
-					                                                         &tf, 
-					                                                         &promoter_number, 
+					                                                         &tau_fast,
+					                                                         &reaction_type,
+					                                                         &tf,
+					                                                         &promoter_number,
 					                                                         &site_number,
-					                                                         problem->n_sites, 
-					                                                         problem->n_tfs, 
-					                                                         problem->n_target_genes, 
+					                                                         problem->n_sites,
+					                                                         problem->n_tfs,
+					                                                         problem->n_target_genes,
+					                                                         problem->parameters->T,
+					                                                         problem->parameters->range,
 					                                                         ap);
 					//					printf("multiscale_ssa %d a0 %f %f %f %d\n", ap, t_synch, t_fast, tau_fast, reaction_number);
 					t_fast += tau_fast;
@@ -1788,12 +1884,12 @@ void propagate_with_transport (MSSA_Timeclass *tc, MSSA_Problem *problem)
 				}
 			}
 		}
-		reaction_number_slow = mssa_get_reaction_slow_with_transport (tc->solution_mrna, 
-		                                                              tc->solution_protein, 
-		                                                              problem->allele_0, 
-		                                                              problem->allele_1, 
+		reaction_number_slow = mssa_get_reaction_slow_with_transport (tc->solution_mrna,
+		                                                              tc->solution_protein,
+		                                                              problem->allele_0,
+		                                                              problem->allele_1,
 		                                                              &tau_slow,
-		                                                              &reaction_type_slow, 
+		                                                              &reaction_type_slow,
 		                                                              &promoter_number_slow,
 		                                                              &nuc_number_slow,
 		                                                              problem->target_gene_index,
@@ -1803,12 +1899,12 @@ void propagate_with_transport (MSSA_Timeclass *tc, MSSA_Problem *problem)
 		                                                              number_of_reactions_per_nuc,
 		                                                              number_of_reactions,
 		                                                              problem->parameters->T,
-		                                                              problem->parameters->protein_degradation, 
+		                                                              problem->parameters->protein_degradation,
 		                                                              problem->parameters->mrna_degradation,
 		                                                              problem->parameters->translation,
 		                                                              problem->parameters->transport_mrna,
 		                                                              problem->parameters->transport_protein,
-		                                                              problem->n_tfs, 
+		                                                              problem->n_tfs,
 		                                                              problem->n_target_genes,
 		                                                              tc->n_nucs,
 		                                                              1 - slow_only);
@@ -1844,7 +1940,7 @@ void propagate_with_transport (MSSA_Timeclass *tc, MSSA_Problem *problem)
 			if (slow_only == 0) {
 				fprintf(stderr, " fast %d", inner_iter_kounter);
 			}
-			fprintf(stderr, "\n");			
+			fprintf(stderr, "\n");
 		}
 	} /* end of slow loop */
 	for (int ap = 0; ap < tc->n_nucs; ap++) {
@@ -2025,7 +2121,7 @@ void integrate (MSSA_Timeclass *tc, MSSA_Problem *problem)
 	if (tc->kounter == 0 && verbose) mssa_print_timeclass (tc, problem);
 /* Copy result from previous TC */
 	if (tc->type > 0) connect (tc, problem);
-/* Add bias or set the initial cond */ 
+/* Add bias or set the initial cond */
 	if (tc->type == 2) {
 		inject (tc, problem);
 		add_bias (tc, problem);
@@ -2041,7 +2137,7 @@ void integrate (MSSA_Timeclass *tc, MSSA_Problem *problem)
 	}
 /* Nuclear division, All protein is to be unbound already */
 	if (tc->type == 0) divide (tc, problem);
-/* Run the model in the mitosis mode - without fast reactions, 
+/* Run the model in the mitosis mode - without fast reactions,
  * translation and transcription.
  * Firstly, unbound all proteins!
  */
@@ -2197,7 +2293,7 @@ int main(int argc, char**argv)
 			problem->repeat = repeat - 1;
 			g_list_foreach (problem->tc_list, (GFunc) integrate, (gpointer) problem);
 			printf("\r\nfflush\r\n");
-			fflush (stdout);					
+			fflush (stdout);
 		}
 	} else {
 		for (int r = 0; r < repeat - 1; r++) {
