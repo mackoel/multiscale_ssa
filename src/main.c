@@ -596,6 +596,10 @@ int mssa_get_reaction_fast_with_buffers_2(double *solution,
                                           MSSA_site ***allele_1,
                                           double *propensity,
                                           double *probability,
+                                          int **site_tab_bind_0,
+                                          int **site_tab_bind_1,
+                                          int **site_tab_unbind_0,
+                                          int **site_tab_unbind_1,
                                           double *tau,
                                           int *reaction_type,
                                           int *tf,
@@ -612,11 +616,8 @@ int mssa_get_reaction_fast_with_buffers_2(double *solution,
 	double aggregate;
 	double prop_sum = 0;
 	double random = g_rand_double (grand);
-	int **site_tab_bind_0, **site_tab_bind_1, **site_tab_unbind_0, **site_tab_unbind_1;
-	site_tab_bind_0 = g_new0(int*, n_target_genes);
 /* Binding */
 	for (i = 0; i < n_target_genes; i++) {
-		site_tab_bind_0[i] = g_new0(int, n_tfs);
 		for (j = 0; j < n_tfs; j++) {
 			double prop = 0; /* Sum of energies of free bs */
 			reaction_number = i * n_tfs + j;
@@ -635,12 +636,9 @@ int mssa_get_reaction_fast_with_buffers_2(double *solution,
 			propensity[reaction_number] = solution[ap * n_tfs + j] * prop;
 			prop_sum += propensity[reaction_number];
 		}
-
 	}
-	site_tab_bind_1 = g_new0(int*, n_target_genes);
 	for (i = 0; i < n_target_genes; i++) {
 		for (j = 0; j < n_tfs; j++) {
-			site_tab_bind_1[i] = g_new0(int, n_tfs);
 			double prop = 0; /* Sum of energies of free bs */
 			reaction_number = n_tfs * n_target_genes + i * n_tfs + j;
 			l = g_rand_int_range (grand, 0, n_sites[i]);
@@ -659,12 +657,9 @@ int mssa_get_reaction_fast_with_buffers_2(double *solution,
 			propensity[reaction_number] = solution[ap * n_tfs + j] * prop;
 			prop_sum += propensity[reaction_number];
 		}
-
 	}
 /* Unbinding */
-	site_tab_unbind_0 = g_new0(int*, n_target_genes);
 	for (i = 0; i < n_target_genes; i++) {
-		site_tab_unbind_0[i] = g_new0(int, n_tfs);
 		for (j = 0; j < n_tfs; j++) {
 			double prop = 0; /* Sum of energies of bound bs */
 			reaction_number = 2 * n_tfs * n_target_genes + i * n_tfs + j;
@@ -684,11 +679,8 @@ int mssa_get_reaction_fast_with_buffers_2(double *solution,
 			propensity[reaction_number] = bound[ap * n_tfs + j] * prop;
 			prop_sum += propensity[reaction_number];
 		}
-
 	}
-	site_tab_unbind_1 = g_new0(int*, n_target_genes);
 	for (i = 0; i < n_target_genes; i++) {
-		site_tab_unbind_1[i] = g_new0(int, n_tfs);
 		for (j = 0; j < n_tfs; j++) {
 			double prop = 0; /* Sum of energies of bound bs */
 			reaction_number = 3 * n_tfs * n_target_genes + i * n_tfs + j;
@@ -737,16 +729,6 @@ int mssa_get_reaction_fast_with_buffers_2(double *solution,
 		(*tf) = -1;
 		(*reaction_type) = -1;
 		(*site_number) = -1;
-		for (i = 0; i < n_target_genes; i++) {
-			g_free(site_tab_bind_0[i]);
-			g_free(site_tab_bind_1[i]);
-			g_free(site_tab_unbind_0[i]);
-			g_free(site_tab_unbind_1[i]);
-		}
-		g_free(site_tab_bind_0);
-		g_free(site_tab_bind_1);
-		g_free(site_tab_unbind_0);
-		g_free(site_tab_unbind_1);
 		return(-1);
 	}
 	found = 0;
@@ -897,16 +879,6 @@ int mssa_get_reaction_fast_with_buffers_2(double *solution,
 			}
 		}
 	}
-	for (i = 0; i < n_target_genes; i++) {
-		g_free(site_tab_bind_0[i]);
-		g_free(site_tab_bind_1[i]);
-		g_free(site_tab_unbind_0[i]);
-		g_free(site_tab_unbind_1[i]);
-	}
-	g_free(site_tab_bind_0);
-	g_free(site_tab_bind_1);
-	g_free(site_tab_unbind_0);
-	g_free(site_tab_unbind_1);
 	return (reaction_number);
 }
 
@@ -1834,9 +1806,23 @@ void propagate_with_transport (MSSA_Timeclass *tc, MSSA_Problem *problem)
 	int number_of_reactions_fast_per_nuc = 4 * problem->n_tfs * problem->n_target_genes; /* bind/unbind each tf in each promotor */
 	propensity_fast = g_new0(double*, tc->n_nucs);
 	probability_fast = g_new0(double*, tc->n_nucs);
+	int ***site_tab_bind_0 = g_new0(int**, tc->n_nucs);
+	int ***site_tab_bind_1 = g_new0(int**, tc->n_nucs);
+	int ***site_tab_unbind_0 = g_new0(int**, tc->n_nucs);
+	int ***site_tab_unbind_1 = g_new0(int**, tc->n_nucs);
 	for (int ap = 0; ap < tc->n_nucs; ap++) {
 		propensity_fast[ap] = g_new0(double, number_of_reactions_fast_per_nuc);
 		probability_fast[ap] = g_new0(double, number_of_reactions_fast_per_nuc);
+		site_tab_bind_0[ap] = g_new0(int*, problem->n_target_genes);
+		site_tab_bind_1[ap] = g_new0(int*, problem->n_target_genes);
+		site_tab_unbind_0[ap] = g_new0(int*, problem->n_target_genes);
+		site_tab_unbind_1[ap] = g_new0(int*, problem->n_target_genes);
+		for (int i = 0; i < problem->n_target_genes; i++) {
+			site_tab_bind_0[ap][i] = g_new0(int, problem->n_tfs);
+			site_tab_bind_1[ap][i] = g_new0(int, problem->n_tfs);
+			site_tab_unbind_0[ap][i] = g_new0(int, problem->n_tfs);
+			site_tab_unbind_1[ap][i] = g_new0(int, problem->n_tfs);
+		}
 	}
 /* Set simulation time */
 	t_start_slow = tc->t_start;
@@ -1849,7 +1835,7 @@ void propagate_with_transport (MSSA_Timeclass *tc, MSSA_Problem *problem)
 		int reaction_type_slow, promoter_number_slow;
 		int nuc_number_slow;
 		if (slow_only == 0) { /* interphase */
-#pragma omp parallel for schedule(static) default(none) shared(problem, tc, propensity_fast, probability_fast, fast_time_max, fast_steps_frac) reduction(+:inner_iter_kounter)
+#pragma omp parallel for schedule(static) default(none) shared(problem, tc, propensity_fast, probability_fast, site_tab_bind_0, site_tab_bind_1, site_tab_unbind_0, site_tab_unbind_1,fast_time_max, fast_steps_frac) reduction(+:inner_iter_kounter)
 			for (int ap = 0; ap < tc->n_nucs; ap++) {
 				double t_start_fast;
 				double t_stop_fast;
@@ -1870,6 +1856,10 @@ void propagate_with_transport (MSSA_Timeclass *tc, MSSA_Problem *problem)
 					                                                         problem->allele_1,
 					                                                         propensity_fast[ap],
 					                                                         probability_fast[ap],
+									                                         site_tab_bind_0[ap],
+									                                         site_tab_bind_1[ap],
+									                                         site_tab_unbind_0[ap],
+									                                         site_tab_unbind_1[ap],
 					                                                         &tau_fast,
 					                                                         &reaction_type,
 					                                                         &tf,
@@ -1950,11 +1940,25 @@ void propagate_with_transport (MSSA_Timeclass *tc, MSSA_Problem *problem)
 	for (int ap = 0; ap < tc->n_nucs; ap++) {
 		g_free (propensity_fast[ap]);
 		g_free (probability_fast[ap]);
+		for (int i = 0; i < problem->n_target_genes; i++) {
+			g_free(site_tab_bind_0[ap][i]);
+			g_free(site_tab_bind_1[ap][i]);
+			g_free(site_tab_unbind_0[ap][i]);
+			g_free(site_tab_unbind_1[ap][i]);
+		}
+		g_free(site_tab_bind_0[ap]);
+		g_free(site_tab_bind_1[ap]);
+		g_free(site_tab_unbind_0[ap]);
+		g_free(site_tab_unbind_1[ap]);
 	}
 	g_free(propensity_fast);
 	g_free(probability_fast);
 	g_free(propensity);
 	g_free(probability);
+	g_free(site_tab_bind_0);
+	g_free(site_tab_bind_1);
+	g_free(site_tab_unbind_0);
+	g_free(site_tab_unbind_1);
 	if (verbose) mssa_print_timeclass (tc, problem);
 }
 
