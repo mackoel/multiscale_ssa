@@ -1609,12 +1609,16 @@ void score (MSSA_Timeclass *tc, MSSA_Problem *problem)
 			yy += y * y;
 			xy += x * y;
 		}
-		mx = nx / (double)n;
+/*		mx = nx / (double)n;
 		my = ny / (double)n;
 		sx = (xx - 2 * mx * nx + mx * mx * n) / (double)(n - 1);
 		sy = (yy - 2 * my * ny + my * my * n) / (double)(n - 1);
 		sxy = (xy - my * nx - mx * ny + mx * my * n) / (double)(n - 1);
-		cxy = (sx > 0 && sy > 0) ? sxy / (sx * sy) : 0;
+		cxy = (sx > 0 && sy > 0) ? sxy / (sx * sy) : 0;*/
+		sx = (double)n * xx - nx * nx;
+		sy = (double)n * yy - ny * ny;
+		sxy = (double)n * xy - nx * ny;
+		cxy = (sx > 0 && sy > 0) ? sxy / sqrt(sx * sy) : 0;
 		printf("%15.6f ", 1 - cxy);
 /*		printf("%15.6f %15.6f %15.6f ", sx, sy, 1 - cxy);*/
 	}
