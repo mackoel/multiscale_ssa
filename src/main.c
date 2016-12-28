@@ -1109,28 +1109,36 @@ int mssa_get_reaction_slow_with_transport(double *solution_mrna,
 				int reaction_number = ap * number_of_reactions_per_nuc + i;
 				double prop = 0; /* Product of T of bound bs */
 				int zero = 1; /* flag */
+				int nact = 0;
+				int nrep = 0;
 		/* Allele_0 */
 				for (int k = 0; k < n_sites[i]; k++) {
 					if (allele_0[ap][i][k].status == 1) {
 						prop += T[i * n_tfs + allele_0[ap][i][k].tf_index];
 						zero = 0;
+						nact += (T[i * n_tfs + allele_0[ap][i][k].tf_index] > 0) ? 1:0;
+						nrep += (T[i * n_tfs + allele_0[ap][i][k].tf_index] < 0) ? 1:0;
 					}
 
 				}
-				propensity[reaction_number] = (zero == 0) ? exp(prop) : 0;
+				propensity[reaction_number] = (nact > 0) ? exp(prop) : 0;
 				prop_sum += propensity[reaction_number];
 		/* Allele_1 */
 				reaction_number = ap * number_of_reactions_per_nuc + n_target_genes + i;
 				prop = 0; /* Product of T of bound bs */
 				zero = 1; /* flag */
+				nact = 0;
+				nrep = 0;
 				for (int k = 0; k < n_sites[i]; k++) {
 					if (allele_1[ap][i][k].status == 1) {
 						prop += T[i * n_tfs + allele_1[ap][i][k].tf_index];
 						zero = 0;
+						nact += (T[i * n_tfs + allele_1[ap][i][k].tf_index] > 0) ? 1:0;
+						nrep += (T[i * n_tfs + allele_1[ap][i][k].tf_index] < 0) ? 1:0;
 					}
 
 				}
-				propensity[reaction_number] = (zero == 0) ? exp(prop) : 0;
+				propensity[reaction_number] = (nact > 0) ? exp(prop) : 0;
 				prop_sum += propensity[reaction_number];
 /* translation */
 				reaction_number = ap * number_of_reactions_per_nuc + 2 * n_target_genes + i;
