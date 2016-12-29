@@ -1530,14 +1530,18 @@ void mssa_out_timeclass (MSSA_Timeclass *tc, MSSA_Problem *problem)
 	if (out_file == NULL) return;
 	FILE*fp = fopen(out_file, "a");
 	for (int i = 0; i < tc->n_nucs; i++) {
-		fprintf(fp, "%d %d %d %6.3f ", problem->repeat, tc->kounter, i, tc->t_end);
+		fprintf(fp, "%d %d %d %6.3f", problem->repeat, tc->kounter, i, tc->t_end);
 		for (int j = 0; j < problem->n_target_genes; j++) {
 			int k = problem->target_gene_index[j];
-			fprintf(fp, "%.0f ", tc->solution_protein[i * problem->n_tfs + k] + tc->bound_protein[i * problem->n_tfs + k]);
+			fprintf(fp, " %.0f", tc->solution_protein[i * problem->n_tfs + k] + tc->bound_protein[i * problem->n_tfs + k]);
 		}
 		for (int j = 0; j < problem->n_target_genes; j++) {
 			int k = problem->target_gene_index[j];
-			fprintf(fp, "%.0f ", tc->solution_mrna[i * problem->n_tfs + k]);
+			fprintf(fp, " %.0f", tc->solution_mrna[i * problem->n_tfs + k]);
+		}
+		for (int j = 0; j < problem->n_target_genes; j++) {
+			int k = problem->target_gene_index[j];
+			fprintf(fp, " %.0f", tc->solution_protein[i * problem->n_tfs + k]);
 		}
 		fprintf(fp, "\n");
 	}
