@@ -618,89 +618,81 @@ int mssa_get_reaction_fast_with_buffers_2(double *solution,
 	double random = g_rand_double (grand);
 /* Binding */
 	for (i = 0; i < n_target_genes; i++) {
-		for (j = 0; j < n_tfs; j++) {
-			double prop = 0; /* Sum of energies of free bs */
-			reaction_number = i * n_tfs + j;
-			l = g_rand_int_range (grand, 0, n_sites[i]);
-			s = l;
-			for (k = 0; k < n_sites[i]; k++) {
-				if (allele_0[ap][i][s].status == 0 && allele_0[ap][i][s].tf_index == j) {
-					prop += allele_0[ap][i][s].energy;
-					site_tab_bind_0[i][j] = s;
-				}
-				s++;
-				if (s > n_sites[i] - 1) {
-					s = 0;
-				}
+		l = g_rand_int_range (grand, 0, n_sites[i]);
+		s = l;
+		for (k = 0; k < n_sites[i]; k++) {
+			if (allele_0[ap][i][s].status == 0) {
+				double prop = 0;
+				j = allele_0[ap][i][s].tf_index;
+				prop = solution[ap * n_tfs + j] * allele_0[ap][i][s].energy;
+				reaction_number = i * n_tfs + j;
+				propensity[reaction_number] += prop;
+				site_tab_bind_0[i][j] = s;
+				prop_sum += prop;
 			}
-			propensity[reaction_number] = solution[ap * n_tfs + j] * prop;
-			prop_sum += propensity[reaction_number];
+			s++;
+			if (s > n_sites[i] - 1) {
+				s = 0;
+			}
 		}
 	}
 	for (i = 0; i < n_target_genes; i++) {
-		for (j = 0; j < n_tfs; j++) {
-			double prop = 0; /* Sum of energies of free bs */
-			reaction_number = n_tfs * n_target_genes + i * n_tfs + j;
-			l = g_rand_int_range (grand, 0, n_sites[i]);
-			s = l;
-			for (k = 0; k < n_sites[i]; k++) {
-				prop += (allele_1[ap][i][s].status == 0 && allele_1[ap][i][s].tf_index == j) ? allele_1[ap][i][k].energy : 0;
-				if (allele_1[ap][i][s].status == 0 && allele_1[ap][i][s].tf_index == j) {
-					prop += allele_1[ap][i][s].energy;
-					site_tab_bind_1[i][j] = s;
-				}
-				s++;
-				if (s > n_sites[i] - 1) {
-					s = 0;
-				}
+		l = g_rand_int_range (grand, 0, n_sites[i]);
+		s = l;
+		for (k = 0; k < n_sites[i]; k++) {
+			if (allele_1[ap][i][s].status == 0) {
+				double prop = 0;
+				j = allele_1[ap][i][s].tf_index;
+				prop = solution[ap * n_tfs + j] * allele_1[ap][i][k].energy;
+				reaction_number = n_tfs * n_target_genes + i * n_tfs + j;
+				propensity[reaction_number] += prop;
+				site_tab_bind_1[i][j] = s;
+				prop_sum += prop;
 			}
-			propensity[reaction_number] = solution[ap * n_tfs + j] * prop;
-			prop_sum += propensity[reaction_number];
+			s++;
+			if (s > n_sites[i] - 1) {
+				s = 0;
+			}
 		}
 	}
 /* Unbinding */
 	for (i = 0; i < n_target_genes; i++) {
-		for (j = 0; j < n_tfs; j++) {
-			double prop = 0; /* Sum of energies of bound bs */
-			reaction_number = 2 * n_tfs * n_target_genes + i * n_tfs + j;
-			l = g_rand_int_range (grand, 0, n_sites[i]);
-			s = l;
-			for (k = 0; k < n_sites[i]; k++) {
-				prop += (allele_0[ap][i][s].status == 1 && allele_0[ap][i][s].tf_index == j) ? allele_0[ap][i][s].energy : 0;
-				if (allele_0[ap][i][s].status == 1 && allele_0[ap][i][s].tf_index == j) {
-					prop += allele_0[ap][i][s].energy;
-					site_tab_unbind_0[i][j] = s;
-				}
-				s++;
-				if (s > n_sites[i] - 1) {
-					s = 0;
-				}
+		l = g_rand_int_range (grand, 0, n_sites[i]);
+		s = l;
+		for (k = 0; k < n_sites[i]; k++) {
+			if (allele_0[ap][i][s].status == 1) {
+				double prop = 0;
+				j = allele_0[ap][i][s].tf_index;
+				prop = bound[ap * n_tfs + j] * allele_0[ap][i][s].energy;
+				reaction_number = 2 * n_tfs * n_target_genes + i * n_tfs + j;
+				propensity[reaction_number] += prop;
+				site_tab_unbind_0[i][j] = s;
+				prop_sum += prop;
 			}
-			propensity[reaction_number] = bound[ap * n_tfs + j] * prop;
-			prop_sum += propensity[reaction_number];
+			s++;
+			if (s > n_sites[i] - 1) {
+				s = 0;
+			}
 		}
 	}
 	for (i = 0; i < n_target_genes; i++) {
-		for (j = 0; j < n_tfs; j++) {
-			double prop = 0; /* Sum of energies of bound bs */
-			reaction_number = 3 * n_tfs * n_target_genes + i * n_tfs + j;
-			l = g_rand_int_range (grand, 0, n_sites[i]);
-			s = l;
-			for (k = 0; k < n_sites[i]; k++) {
-				prop += (allele_1[ap][i][s].status == 1 && allele_1[ap][i][s].tf_index == j) ? allele_1[ap][i][s].energy : 0;
-				if (allele_1[ap][i][s].status == 1 && allele_1[ap][i][s].tf_index == j) {
-					prop += allele_1[ap][i][s].energy;
-					site_tab_unbind_1[i][j] = s;
-				}
-				s++;
-				if (s > n_sites[i] - 1) {
-					s = 0;
-				}
+		l = g_rand_int_range (grand, 0, n_sites[i]);
+		s = l;
+		for (k = 0; k < n_sites[i]; k++) {
+			if (allele_1[ap][i][s].status == 1) {
+				double prop = 0; /* Sum of energies of bound bs */
+				j = allele_1[ap][i][s].tf_index;
+				prop = bound[ap * n_tfs + j] * allele_1[ap][i][s].energy;
+				reaction_number = 3 * n_tfs * n_target_genes + i * n_tfs + j;
+				propensity[reaction_number] += prop;
+				site_tab_unbind_1[i][j] = s;
+				prop_sum += prop;
 			}
-			propensity[reaction_number] = bound[ap * n_tfs + j] * prop;
-			prop_sum += propensity[reaction_number];
+			s++;
+			if (s > n_sites[i] - 1) {
+				s = 0;
+			}
 		}
-
 	}
 	if (prop_sum <= 0.00000000001) {
 		if (verbose) {
@@ -819,11 +811,11 @@ int mssa_get_reaction_fast_with_buffers_2(double *solution,
 					g_warning("fast bind reaction n %d t %d: ap %d tf %d target %d < 0", reaction_number, (*reaction_type), ap, (*tf), (*target));
 					solution[ap * n_tfs + (*tf)] = 0;
 				}
-			/* allelle, nuc, gen, cur, type, block */
+			/* allelle, nuc, gen, cur, type (0 - act, 1 - rep), block */
 				if (parameters[(*target) * n_tfs + (*tf)] < 0 && range > 0) {
-					mssa_check_site_overlap (allele_0, ap, (*target), s, 0, -1);
-				} else {
 					mssa_check_site_overlap (allele_0, ap, (*target), s, 1, -1);
+				} else {
+					mssa_check_site_overlap (allele_0, ap, (*target), s, 0, -1);
 				}
 			} else { /* Unbinding */
 				s = site_tab_unbind_0[(*target)][(*tf)];
@@ -835,11 +827,11 @@ int mssa_get_reaction_fast_with_buffers_2(double *solution,
 					g_warning("fast unbind reaction n %d t %d: ap %d tf %d target %d < 0", reaction_number, (*reaction_type), ap, (*tf), (*target));
 					bound[ap * n_tfs + (*tf)] = 0;
 				}
-			/* allelle, nuc, gen, cur, type, block */
+			/* allelle, nuc, gen, cur, type (0 - act, 1 - rep), block */
 				if (parameters[(*target) * n_tfs + (*tf)] < 0 && range > 0) {
-					mssa_check_site_overlap (allele_0, ap, (*target), s, 0, 0);
-				} else {
 					mssa_check_site_overlap (allele_0, ap, (*target), s, 1, 0);
+				} else {
+					mssa_check_site_overlap (allele_0, ap, (*target), s, 0, 0);
 				}
 			}
 		}
@@ -854,29 +846,41 @@ int mssa_get_reaction_fast_with_buffers_2(double *solution,
 					g_warning("fast bind reaction n %d t %d: ap %d tf %d target %d < 0", reaction_number, (*reaction_type), ap, (*tf), (*target));
 					solution[ap * n_tfs + (*tf)] = 0;
 				}
-			/* allelle, nuc, gen, cur, type, block */
+			/* allelle, nuc, gen, cur, type (0 - act, 1 - rep), block */
 				if (parameters[(*target) * n_tfs + (*tf)] < 0 && range > 0) {
-					mssa_check_site_overlap (allele_1, ap, (*target), s, 0, -1);
-				} else {
 					mssa_check_site_overlap (allele_1, ap, (*target), s, 1, -1);
+				} else {
+					mssa_check_site_overlap (allele_1, ap, (*target), s, 0, -1);
 				}
 			} else { /* Unbinding */
 				s = site_tab_unbind_1[(*target)][(*tf)];
 				(*site_number) = s;
-				allele_0[ap][(*target)][s].status = 0;
+				allele_1[ap][(*target)][s].status = 0;
 				solution[ap * n_tfs + (*tf)] += 1;
 				bound[ap * n_tfs + (*tf)] -= 1;
 				if (bound[ap * n_tfs + (*tf)] < 0) {
 					g_warning("fast unbind reaction n %d t %d: ap %d tf %d target %d < 0", reaction_number, (*reaction_type), ap, (*tf), (*target));
 					bound[ap * n_tfs + (*tf)] = 0;
 				}
-			/* allelle, nuc, gen, cur, type, block */
+			/* allelle, nuc, gen, cur, type (0 - act, 1 - rep), block */
 				if (parameters[(*target) * n_tfs + (*tf)] < 0 && range > 0) {
-					mssa_check_site_overlap (allele_1, ap, (*target), s, 0, 0);
-				} else {
 					mssa_check_site_overlap (allele_1, ap, (*target), s, 1, 0);
+				} else {
+					mssa_check_site_overlap (allele_1, ap, (*target), s, 0, 0);
 				}
 			}
+		}
+	}
+	for (i = 0; i < n_target_genes; i++) {
+		for (j = 0; j < n_tfs; j++) {
+			reaction_number = i * n_tfs + j;
+			propensity[reaction_number] = probability[reaction_number] = 0;
+			reaction_number = n_tfs * n_target_genes + i * n_tfs + j;
+			propensity[reaction_number] = probability[reaction_number] = 0;
+			reaction_number = 2 * n_tfs * n_target_genes + i * n_tfs + j;
+			propensity[reaction_number] = probability[reaction_number] = 0;
+			reaction_number = 3 * n_tfs * n_target_genes + i * n_tfs + j;
+			propensity[reaction_number] = probability[reaction_number] = 0;
 		}
 	}
 	return (reaction_number);
