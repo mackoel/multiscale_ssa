@@ -172,6 +172,7 @@ typedef struct {
 	double *bound_protein;
 	double *data_mrna; /* a table of concentrations/molecule numbers */
 	double *solution_mrna;
+	double score;
 } MSSA_Timeclass;
 
 typedef struct {
@@ -217,6 +218,7 @@ static char*out_file;
 static char*log_file;
 static char*action;
 static gboolean verbose = FALSE;
+static gboolean scores = FALSE;
 static gboolean dryrun = FALSE;
 static int repeat;
 static int mol_per_conc = MOLECULES_PER_CONCENTRATION;
@@ -270,6 +272,7 @@ MSSA_Problem *mssa_read_problem(gchar*filename)
 		}
 		tc->data_mrna = g_new0(double, tc->n_nucs * problem->n_tfs);
 		tc->solution_mrna = g_new0(double, tc->n_nucs * problem->n_tfs);
+		tc->score = 0;
 		problem->tc_list = g_list_append(problem->tc_list, tc);
 	}
 	problem->sum_sites = 0;
@@ -1581,9 +1584,9 @@ void score (MSSA_Timeclass *tc, MSSA_Problem *problem)
 		printf("%15.6f ", chisq);
 	}
 	printf("\n");*/
-	printf("multiscale_ssa %d %d corr ", problem->repeat, tc->kounter);
+	if (scores) printf("multiscale_ssa %d %d corr ", problem->repeat, tc->kounter);
 	for (int j = 0; j < problem->n_target_genes; j++) {
-		printf("g%d =", j);
+		if (scores) printf("g%d =", j);
 		int k = problem->target_gene_index[j];
 		double sx, sy, mx, my, xx, yy, nx, ny, xy, sxy, cxy;
 		sx = sy = mx = my = xx = yy = nx = ny = xy = sxy = cxy = 0;
@@ -1607,10 +1610,11 @@ void score (MSSA_Timeclass *tc, MSSA_Problem *problem)
 		sy = (double)n * yy - ny * ny;
 		sxy = (double)n * xy - nx * ny;
 		cxy = (sx > 0 && sy > 0) ? sxy / sqrt(sx * sy) : 0;
-		printf("%15.6f ", 1 - cxy);
+		tc->score += (1 - cxy);
+		if (scores) printf("%15.6f ", 1 - cxy);
 /*		printf("%15.6f %15.6f %15.6f ", sx, sy, 1 - cxy);*/
 	}
-	printf("\n");
+	if (scores) printf("\n");
 }
 
 double corr(double *x, double *y, int n, double *mx_ptr, double *my_ptr, double *sx_ptr, double *sy_ptr, double *sxy_ptr)
@@ -1639,6 +1643,18 @@ double corr(double *x, double *y, int n, double *mx_ptr, double *my_ptr, double 
 	return cxy;
 }
 
+void print_scores (MSSA_Timeclass *tc, MSSA_Problem *problem)
+{
+	int n = tc->n_nucs;
+	if (tc->type == 1 && tc->has_data == 1) {
+		printf("multiscale_ssa %d %d corr ", problem->repeat, tc->kounter);
+		for (int j = 0; j < problem->n_target_genes; j++) {
+			printf("g%d =", j);
+			printf("%15.6f ", tc->score);
+		}
+		printf("\n");
+	}
+}
 
 void propagate (MSSA_Timeclass *tc, MSSA_Problem *problem)
 {
@@ -2213,6 +2229,7 @@ static GOptionEntry entries[] =
 	{ "outfile", 'o', 0, G_OPTION_ARG_STRING, &out_file, N_("File name for concentrations"), N_("FILENAME") },
 	{ "action", 'a', 0, G_OPTION_ARG_STRING, &action, N_("What to do"), N_("OPERATION") },
 	{ "repeat", 'r', 0, G_OPTION_ARG_INT, &repeat, N_("Number of repeats"), N_("REPEAT") },
+	{ "verbose", 'e', 0, G_OPTION_ARG_NONE, &scores, N_("scores"), N_("SCORES") },
 	{ "molperconc", 'm', 0, G_OPTION_ARG_INT, &mol_per_conc, N_("Number of molecules per concentration unit"), N_("MOL") },
 	{ "fasttimemax", 't', 0, G_OPTION_ARG_DOUBLE, &fast_time_max, N_("Fast time limit"), N_("FASTTIME") },
 	{ "faststepsfrac", 's', 0, G_OPTION_ARG_DOUBLE, &fast_steps_frac, N_("Fraction of fast steps"), N_("FRAC") },
@@ -2273,6 +2290,7 @@ int main(int argc, char**argv)
 		}
 		problem->repeat = repeat - 1;
 		g_list_foreach (problem->tc_list, (GFunc) integrate, (gpointer) problem);
+		g_list_foreach (problem->tc_list, (GFunc) print_scores, (gpointer) problem);
 	} else if (!g_strcmp0 (action, "repl")) {
 		char tag[10];
 /*		while(1) {
@@ -2292,7 +2310,7 @@ int main(int argc, char**argv)
 		g_warning(_("%s called for operation optimize"), g_get_prgname());
 //		printf("\r\nfflush\r\n");
 //		fflush (stdout);
-		while (!feof(stdout)) {
+		while (!feof(stdin)) {
 			scanf("%s(", tag);
 			for (int i = 0; i < problem->n_target_genes; i++) {
 				for (int j = 0; j < problem->n_tfs; j++) {
@@ -2316,6 +2334,7 @@ int main(int argc, char**argv)
 			}
 			problem->repeat = repeat - 1;
 			g_list_foreach (problem->tc_list, (GFunc) integrate, (gpointer) problem);
+			g_list_foreach (problem->tc_list, (GFunc) print_scores, (gpointer) problem);
 			printf("\r\nfflush\r\n");
 			fflush (stdout);
 		}
@@ -2327,6 +2346,7 @@ int main(int argc, char**argv)
 		}
 		problem->repeat = repeat - 1;
 		g_list_foreach (problem->tc_list, (GFunc) integrate, (gpointer) problem);
+		g_list_foreach (problem->tc_list, (GFunc) print_scores, (gpointer) problem);
 	}
 	return (0);
 }
