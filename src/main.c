@@ -172,7 +172,8 @@ typedef struct {
 	double *bound_protein;
 	double *data_mrna; /* a table of concentrations/molecule numbers */
 	double *solution_mrna;
-	double score;
+	double corr;
+	double chisq;
 } MSSA_Timeclass;
 
 typedef struct {
@@ -272,7 +273,8 @@ MSSA_Problem *mssa_read_problem(gchar*filename)
 		}
 		tc->data_mrna = g_new0(double, tc->n_nucs * problem->n_tfs);
 		tc->solution_mrna = g_new0(double, tc->n_nucs * problem->n_tfs);
-		tc->score = 0;
+		tc->corr = 0;
+		tc->chisq = 0;
 		problem->tc_list = g_list_append(problem->tc_list, tc);
 	}
 	problem->sum_sites = 0;
@@ -1571,19 +1573,20 @@ void add_bias (MSSA_Timeclass *tc, MSSA_Problem *problem)
 void score (MSSA_Timeclass *tc, MSSA_Problem *problem)
 {
 	int n = tc->n_nucs;
-/*	printf("multiscale_ssa %d %d chisq ", problem->repeat, tc->kounter);
+	if (scores) printf("multiscale_ssa %d %d chisq ", problem->repeat, tc->kounter);
 	for (int j = 0; j < problem->n_target_genes; j++) {
-		printf("g%d =", j);
+		if (scores) printf("g%d =", j);
 		double chisq = 0;
 		int k = problem->target_gene_index[j];
-#pragma omp parallel for schedule(static) default(none) shared(tc, problem, k, n) reduction(+:chisq)
+#pragma omp parallel for schedule(static) default(none) shared(tc, problem, k, n, mol_per_conc) reduction(+:chisq)
 		for (int i = 0; i < n; i++) {
-			double difference = tc->solution_protein[i * problem->n_tfs + k] + tc->bound_protein[i * problem->n_tfs + k] - tc->data_protein[i * problem->n_tfs + k] * MOLECULES_PER_CONCENTRATION;
+			double difference = tc->solution_protein[i * problem->n_tfs + k] + tc->bound_protein[i * problem->n_tfs + k] - tc->data_protein[i * problem->n_tfs + k] * mol_per_conc;
 			chisq += difference * difference;
 		}
-		printf("%15.6f ", chisq);
+		tc->chisq += chisq;
+		if (scores) printf("%15.6f ", chisq);
 	}
-	printf("\n");*/
+	if (scores) printf("\n");
 	if (scores) printf("multiscale_ssa %d %d corr ", problem->repeat, tc->kounter);
 	for (int j = 0; j < problem->n_target_genes; j++) {
 		if (scores) printf("g%d =", j);
@@ -1600,19 +1603,12 @@ void score (MSSA_Timeclass *tc, MSSA_Problem *problem)
 			yy += y * y;
 			xy += x * y;
 		}
-/*		mx = nx / (double)n;
-		my = ny / (double)n;
-		sx = (xx - 2 * mx * nx + mx * mx * n) / (double)(n - 1);
-		sy = (yy - 2 * my * ny + my * my * n) / (double)(n - 1);
-		sxy = (xy - my * nx - mx * ny + mx * my * n) / (double)(n - 1);
-		cxy = (sx > 0 && sy > 0) ? sxy / (sx * sy) : 0;*/
 		sx = (double)n * xx - nx * nx;
 		sy = (double)n * yy - ny * ny;
 		sxy = (double)n * xy - nx * ny;
 		cxy = (sx > 0 && sy > 0) ? sxy / sqrt(sx * sy) : 0;
-		tc->score += (1 - cxy);
+		tc->corr += (1 - cxy);
 		if (scores) printf("%15.6f ", 1 - cxy);
-/*		printf("%15.6f %15.6f %15.6f ", sx, sy, 1 - cxy);*/
 	}
 	if (scores) printf("\n");
 }
@@ -1649,8 +1645,13 @@ void print_scores (MSSA_Timeclass *tc, MSSA_Problem *problem)
 	if (tc->type == 1 && tc->has_data == 1) {
 		printf("multiscale_ssa %d %d corr ", problem->repeat, tc->kounter);
 		for (int j = 0; j < problem->n_target_genes; j++) {
-			printf("g%d =", j);
-			printf("%15.6f ", tc->score);
+			printf("g%d = ", j);
+			printf("%.9f ", tc->corr);
+		}
+		printf("chisq ", problem->repeat, tc->kounter);
+		for (int j = 0; j < problem->n_target_genes; j++) {
+			printf("g%d = ", j);
+			printf("%.9f ", tc->chisq);
 		}
 		printf("\n");
 	}
