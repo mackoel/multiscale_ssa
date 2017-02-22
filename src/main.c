@@ -172,8 +172,8 @@ typedef struct {
 	double *bound_protein;
 	double *data_mrna; /* a table of concentrations/molecule numbers */
 	double *solution_mrna;
-	double corr;
-	double chisq;
+	double *corr;
+	double *chisq;
 } MSSA_Timeclass;
 
 typedef struct {
@@ -273,8 +273,8 @@ MSSA_Problem *mssa_read_problem(gchar*filename)
 		}
 		tc->data_mrna = g_new0(double, tc->n_nucs * problem->n_tfs);
 		tc->solution_mrna = g_new0(double, tc->n_nucs * problem->n_tfs);
-		tc->corr = 0;
-		tc->chisq = 0;
+		tc->corr = g_new0(double, problem->n_target_genes);
+		tc->chisq = g_new0(double, problem->n_target_genes);
 		problem->tc_list = g_list_append(problem->tc_list, tc);
 	}
 	problem->sum_sites = 0;
@@ -1583,7 +1583,7 @@ void score (MSSA_Timeclass *tc, MSSA_Problem *problem)
 			double difference = tc->solution_protein[i * problem->n_tfs + k] + tc->bound_protein[i * problem->n_tfs + k] - tc->data_protein[i * problem->n_tfs + k] * mol_per_conc;
 			chisq += difference * difference;
 		}
-		tc->chisq += chisq;
+		tc->chisq[j] += chisq;
 		if (scores) printf("%15.6f ", chisq);
 	}
 	if (scores) printf("\n");
@@ -1607,7 +1607,7 @@ void score (MSSA_Timeclass *tc, MSSA_Problem *problem)
 		sy = (double)n * yy - ny * ny;
 		sxy = (double)n * xy - nx * ny;
 		cxy = (sx > 0 && sy > 0) ? sxy / sqrt(sx * sy) : 0;
-		tc->corr += (1 - cxy);
+		tc->corr[j] += (1 - cxy);
 		if (scores) printf("%15.6f ", 1 - cxy);
 	}
 	if (scores) printf("\n");
@@ -1646,12 +1646,12 @@ void print_scores (MSSA_Timeclass *tc, MSSA_Problem *problem)
 		printf("multiscale_ssa %d %d corr ", problem->repeat, tc->kounter);
 		for (int j = 0; j < problem->n_target_genes; j++) {
 			printf("g%d = ", j);
-			printf("%.9f ", tc->corr);
+			printf("%.9f ", tc->corr[j]);
 		}
 		printf("chisq ", problem->repeat, tc->kounter);
 		for (int j = 0; j < problem->n_target_genes; j++) {
 			printf("g%d = ", j);
-			printf("%.9f ", tc->chisq);
+			printf("%.9f ", tc->chisq[j]);
 		}
 		printf("\n");
 	}
@@ -1994,6 +1994,1186 @@ void propagate_with_transport (MSSA_Timeclass *tc, MSSA_Problem *problem)
 	g_free(site_tab_unbind_1);
 	if (verbose) mssa_print_timeclass (tc, problem);
 }
+
+void propagate_with_transport_2 (MSSA_Timeclass *tc, MSSA_Problem *problem)
+{
+	if (verbose) printf("multiscale_ssa %d propagate %d\n", problem->repeat, tc->kounter);
+	double t_start_slow;
+	double t_stop_slow;
+	double t_slow, tau_slow;
+	double *propensity;
+	double *probability;
+	int number_of_reactions_per_nuc;
+	int number_of_reactions;
+	number_of_reactions_per_nuc = 2 * problem->n_target_genes + /* transcription */
+		problem->n_target_genes + /* translation */
+		problem->n_target_genes + /* degradation mrna */
+		problem->n_target_genes + /* degradation protein */
+		problem->n_target_genes + /* left transport mrna */
+		problem->n_target_genes + /* right transport mrna */
+		problem->n_target_genes + /* left transport protein */
+		problem->n_target_genes; /* right transport protein */
+	number_of_reactions = number_of_reactions_per_nuc * tc->n_nucs; // - 2 * problem->n_target_genes;
+	int slow_only = (tc->type == 3) ? 1 : 0;
+	propensity = g_new0(double, number_of_reactions);
+	probability = g_new0(double, number_of_reactions);
+	double **propensity_fast;
+	double **probability_fast;
+	int number_of_reactions_fast_per_nuc = 4 * problem->n_tfs * problem->n_target_genes; /* bind/unbind each tf in each promotor */
+	propensity_fast = g_new0(double*, tc->n_nucs);
+	probability_fast = g_new0(double*, tc->n_nucs);
+	int ***site_tab_bind_0 = g_new0(int**, tc->n_nucs);
+	int ***site_tab_bind_1 = g_new0(int**, tc->n_nucs);
+	int ***site_tab_unbind_0 = g_new0(int**, tc->n_nucs);
+	int ***site_tab_unbind_1 = g_new0(int**, tc->n_nucs);
+	double ***random_table = g_new0(double**, tc->n_nucs);
+	for (int ap = 0; ap < tc->n_nucs; ap++) {
+		propensity_fast[ap] = g_new0(double, number_of_reactions_fast_per_nuc);
+		probability_fast[ap] = g_new0(double, number_of_reactions_fast_per_nuc);
+		site_tab_bind_0[ap] = g_new0(int*, problem->n_target_genes);
+		site_tab_bind_1[ap] = g_new0(int*, problem->n_target_genes);
+		site_tab_unbind_0[ap] = g_new0(int*, problem->n_target_genes);
+		site_tab_unbind_1[ap] = g_new0(int*, problem->n_target_genes);
+		for (int i = 0; i < problem->n_target_genes; i++) {
+			site_tab_bind_0[ap][i] = g_new0(int, problem->n_tfs);
+			site_tab_bind_1[ap][i] = g_new0(int, problem->n_tfs);
+			site_tab_unbind_0[ap][i] = g_new0(int, problem->n_tfs);
+			site_tab_unbind_1[ap][i] = g_new0(int, problem->n_tfs);
+		}
+		random_table[ap] = g_new0(double*, (int)(problem->sum_sites * fast_steps_frac));
+		for (int l = 0; l < (int)(problem->sum_sites * fast_steps_frac); l++) {
+			random_table[ap][l] = g_new0(double, 2 + 4 * problem->n_target_genes);
+		}
+	}
+/* Set simulation time */
+	t_start_slow = tc->t_start;
+	t_stop_slow = tc->t_end;
+/* Simulate */
+	int iter_kounter = 0;
+	t_slow = t_start_slow;
+	while (t_slow < t_stop_slow) {
+		int reaction_number_slow, inner_iter_kounter = 0;
+		int reaction_type_slow, promoter_number_slow;
+		int nuc_number_slow;
+		if (slow_only == 0) { /* interphase */
+			for (int ap = 0; ap < tc->n_nucs; ap++) {
+				for (int l = 0; l < (int)(problem->sum_sites * fast_steps_frac); l++) {
+					random_table[ap][l][0] = g_rand_double (grand);
+					random_table[ap][l][1] = g_rand_double (grand);
+					for (int i = 2; i < 4 * problem->n_target_genes; i++) {
+						random_table[ap][l][i] = g_rand_double (grand);
+					}
+				}
+			}
+#pragma omp parallel for schedule(static) default(none) shared(problem, tc, propensity_fast, probability_fast, site_tab_bind_0, site_tab_bind_1, site_tab_unbind_0, site_tab_unbind_1,fast_time_max, fast_steps_frac, verbose, random_table) reduction(+:inner_iter_kounter)
+/* start of parallel region */
+			for (int ap = 0; ap < tc->n_nucs; ap++) {
+				double t_start_fast;
+				double t_stop_fast;
+				double t_fast;
+				t_start_fast = 0;
+				t_stop_fast = fast_time_max;
+				t_fast = t_start_fast;
+				for (int l = 0; l < (int)(problem->sum_sites * fast_steps_frac); l++) {
+					double tau_fast;
+					int promoter_number, tf;
+					int site_number;
+					int reaction_type;
+					int reaction_number;
+					int i, j, k, s, sl, found, allele, r_counter;
+					double aggregate;
+					double prop_sum = 0;
+					double random = random_table[ap][l][0];
+					r_counter = 2;
+				/* Binding */
+					for (i = 0; i < problem->n_target_genes; i++) {
+						sl = (int)(random_table[ap][l][r_counter++] * problem->n_sites[i]);
+						s = sl;
+						for (k = 0; k < problem->n_sites[i]; k++) {
+							if (problem->allele_0[ap][i][s].status == 0) {
+								double prop = 0;
+								j = problem->allele_0[ap][i][s].tf_index;
+								prop = tc->solution_protein[ap * problem->n_tfs + j] * problem->allele_0[ap][i][s].energy;
+								reaction_number = i * problem->n_tfs + j;
+								propensity_fast[ap][reaction_number] += prop;
+								site_tab_bind_0[ap][i][j] = s;
+								prop_sum += prop;
+							}
+							s++;
+							if (s > problem->n_sites[i] - 1) {
+								s = 0;
+							}
+						}
+					}
+					for (i = 0; i < problem->n_target_genes; i++) {
+						sl = (int)(random_table[ap][l][r_counter++] * problem->n_sites[i]);
+						s = sl;
+						for (k = 0; k < problem->n_sites[i]; k++) {
+							if (problem->allele_1[ap][i][s].status == 0) {
+								double prop = 0;
+								j = problem->allele_1[ap][i][s].tf_index;
+								prop = tc->solution_protein[ap * problem->n_tfs + j] * problem->allele_1[ap][i][k].energy;
+								reaction_number = problem->n_tfs * problem->n_target_genes + i * problem->n_tfs + j;
+								propensity_fast[ap][reaction_number] += prop;
+								site_tab_bind_1[ap][i][j] = s;
+								prop_sum += prop;
+							}
+							s++;
+							if (s > problem->n_sites[i] - 1) {
+								s = 0;
+							}
+						}
+					}
+				/* Unbinding */
+					for (i = 0; i < problem->n_target_genes; i++) {
+						sl = (int)(random_table[ap][l][r_counter++] * problem->n_sites[i]);
+						s = sl;
+						for (k = 0; k < problem->n_sites[i]; k++) {
+							if (problem->allele_0[ap][i][s].status == 1) {
+								double prop = 0;
+								j = problem->allele_0[ap][i][s].tf_index;
+								prop = tc->bound_protein[ap * problem->n_tfs + j] * problem->allele_0[ap][i][s].energy;
+								reaction_number = 2 * problem->n_tfs * problem->n_target_genes + i * problem->n_tfs + j;
+								propensity_fast[ap][reaction_number] += prop;
+								site_tab_unbind_0[ap][i][j] = s;
+								prop_sum += prop;
+							}
+							s++;
+							if (s > problem->n_sites[i] - 1) {
+								s = 0;
+							}
+						}
+					}
+					for (i = 0; i < problem->n_target_genes; i++) {
+						sl = (int)(random_table[ap][l][r_counter++] * problem->n_sites[i]);
+						s = sl;
+						for (k = 0; k < problem->n_sites[i]; k++) {
+							if (problem->allele_1[ap][i][s].status == 1) {
+								double prop = 0; /* Sum of energies of bound bs */
+								j = problem->allele_1[ap][i][s].tf_index;
+								prop = tc->bound_protein[ap * problem->n_tfs + j] * problem->allele_1[ap][i][s].energy;
+								reaction_number = 3 * problem->n_tfs * problem->n_target_genes + i * problem->n_tfs + j;
+								propensity_fast[ap][reaction_number] += prop;
+								site_tab_unbind_1[ap][i][j] = s;
+								prop_sum += prop;
+							}
+							s++;
+							if (s > problem->n_sites[i] - 1) {
+								s = 0;
+							}
+						}
+					}
+					if (prop_sum <= 0.00000000001) {
+						if (verbose) {
+							int y = 0;
+							for (i = 0; i < problem->n_target_genes; i++) {
+								for (j = 0; j < problem->n_tfs; j++) {
+									if (tc->bound_protein[ap * problem->n_tfs + j] > 0) y++;
+								}
+							}
+							int z = 0;
+							for (i = 0; i < problem->n_target_genes; i++) {
+								for (j = 0; j < problem->n_tfs; j++) {
+									if (tc->solution_protein[ap * problem->n_tfs + j] > 0) z++;
+								}
+							}
+							int p = 0;
+							for (i = 0; i < 4 * problem->n_tfs * problem->n_target_genes; i++) {
+								if (propensity_fast[ap][i] < 0) p++;
+							}
+							g_warning("fast %d: Sum of propensities is too small %g! bound %d sol %d p %d", ap, prop_sum, y, z, p);
+						} else {
+							g_warning("fast %d: Sum of propensities is too small %g!", ap, prop_sum);
+						}
+						tau_fast = TMAX;
+						promoter_number = -1;
+						tf = -1;
+						reaction_type = -1;
+						site_number = -1;
+						break;
+					}
+					found = 0;
+					aggregate = 0;
+				/* Binding */
+					for (i = 0; i < problem->n_target_genes; i++) {
+						for (j = 0; j < problem->n_tfs; j++) {
+							reaction_number = i * problem->n_tfs + j;
+							aggregate += propensity_fast[ap][reaction_number];
+							probability_fast[ap][reaction_number] = aggregate / prop_sum;
+							if (random < probability_fast[ap][reaction_number]) {
+								found = 1;
+								promoter_number = i;
+								tf = j;
+								reaction_type = 1;
+								allele = 0;
+								break;
+							}
+						}
+						if (found == 1) break;
+					}
+					if (found == 0) {
+						for (i = 0; i < problem->n_target_genes; i++) {
+							for (j = 0; j < problem->n_tfs; j++) {
+								reaction_number = problem->n_tfs * problem->n_target_genes + i * problem->n_tfs + j;
+								aggregate += propensity_fast[ap][reaction_number];
+								probability_fast[ap][reaction_number] = aggregate / prop_sum;
+								if (random < probability_fast[ap][reaction_number]) {
+									found = 1;
+									promoter_number = i;
+									tf = j;
+									reaction_type = 1;
+									allele = 1;
+									break;
+								}
+							}
+							if (found == 1) break;
+						}
+					}
+				/* Unbinding */
+					if (found == 0) {
+						for (i = 0; i < problem->n_target_genes; i++) {
+							for (j = 0; j < problem->n_tfs; j++) {
+								reaction_number = 2 * problem->n_tfs * problem->n_target_genes + i * problem->n_tfs + j;
+								aggregate += propensity_fast[ap][reaction_number];
+								probability_fast[ap][reaction_number] = aggregate / prop_sum;
+								if (random < probability_fast[ap][reaction_number]) {
+									found = 1;
+									promoter_number = i;
+									tf = j;
+									reaction_type = 0;
+									allele = 0;
+									break;
+								}
+							}
+							if (found == 1) break;
+						}
+					}
+					if (found == 0) {
+						for (i = 0; i < problem->n_target_genes; i++) {
+							for (j = 0; j < problem->n_tfs; j++) {
+								reaction_number = 3 * problem->n_tfs * problem->n_target_genes + i * problem->n_tfs + j;
+								aggregate += propensity_fast[ap][reaction_number];
+								probability_fast[ap][reaction_number] = aggregate / prop_sum;
+								if (random < probability_fast[ap][reaction_number]) {
+									found = 1;
+									promoter_number = i;
+									tf = j;
+									reaction_type = 0;
+									allele = 1;
+									break;
+								}
+							}
+							if (found == 1) break;
+						}
+					}
+					tau_fast = -log(random_table[ap][l][1]) / prop_sum;
+					site_number = -1;
+					if (found == 1) {
+						if (allele == 0) {
+							if (reaction_type == 1) { /* Binding */
+								s = site_tab_bind_0[ap][promoter_number][tf];
+								site_number = s;
+								problem->allele_0[ap][promoter_number][s].status = 1;
+								tc->solution_protein[ap * problem->n_tfs + tf] += -1;
+								tc->bound_protein[ap * problem->n_tfs + tf] -= -1;
+								if (tc->solution_protein[ap * problem->n_tfs + tf] < 0) {
+									g_warning("fast bind reaction n %d t %d: ap %d tf %d target %d < 0", reaction_number, reaction_type, ap, tf, promoter_number);
+									tc->solution_protein[ap * problem->n_tfs + tf] = 0;
+								}
+							/* allelle, nuc, gen, cur, type (0 - act, 1 - rep), block */
+								if (problem->parameters->T[promoter_number * problem->n_tfs + tf] < 0 && problem->parameters->range > 0) {
+/*									mssa_check_site_overlap (problem->allele_0, ap, promoter_number, s, 1, -1);*/
+									int kount_fw = problem->allele_0[ap][promoter_number][s].repressed_fw;
+									int kount_bk = problem->allele_0[ap][promoter_number][s].repressed_bk;
+									int block = -1;
+									for (int l = 0; l < kount_fw; l++) {
+										if (problem->allele_0[ap][promoter_number][s + 1 + l].status != 1)
+											problem->allele_0[ap][promoter_number][s + 1 + l].status = block;
+									}
+									for (int l = 0; l < kount_bk; l++) {
+										if (problem->allele_0[ap][promoter_number][s - 1 - l].status != 1)
+											problem->allele_0[ap][promoter_number][s - 1 - l].status = block;
+									}
+								} else {
+/*									mssa_check_site_overlap (problem->allele_0, ap, promoter_number, s, 0, -1);*/
+									int kount_fw = problem->allele_0[ap][promoter_number][s].blocked_fw;
+									int kount_bk = problem->allele_0[ap][promoter_number][s].blocked_bk;
+									int block = -1;
+									for (int l = 0; l < kount_fw; l++) {
+										if (problem->allele_0[ap][promoter_number][s + 1 + l].status != 1)
+											problem->allele_0[ap][promoter_number][s + 1 + l].status = block;
+									}
+									for (int l = 0; l < kount_bk; l++) {
+										if (problem->allele_0[ap][promoter_number][s - 1 - l].status != 1)
+											problem->allele_0[ap][promoter_number][s - 1 - l].status = block;
+									}
+								}
+							} else { /* Unbinding */
+								s = site_tab_unbind_0[ap][promoter_number][tf];
+								site_number = s;
+								problem->allele_0[ap][promoter_number][s].status = 0;
+								tc->solution_protein[ap * problem->n_tfs + tf] += 1;
+								tc->bound_protein[ap * problem->n_tfs + tf] -= 1;
+								if (tc->bound_protein[ap * problem->n_tfs + tf] < 0) {
+									g_warning("fast unbind reaction n %d t %d: ap %d tf %d target %d < 0", reaction_number, reaction_type, ap, tf, promoter_number);
+									tc->bound_protein[ap * problem->n_tfs + tf] = 0;
+								}
+							/* allelle, nuc, gen, cur, type (0 - act, 1 - rep), block */
+								if (problem->parameters->T[promoter_number * problem->n_tfs + tf] < 0 && problem->parameters->range > 0) {
+/*									mssa_check_site_overlap (problem->allele_0, ap, promoter_number, s, 1, 0);*/
+									int kount_fw = problem->allele_0[ap][promoter_number][s].repressed_fw;
+									int kount_bk = problem->allele_0[ap][promoter_number][s].repressed_bk;
+									int block = 0;
+									for (int l = 0; l < kount_fw; l++) {
+										if (problem->allele_0[ap][promoter_number][s + 1 + l].status != 1)
+											problem->allele_0[ap][promoter_number][s + 1 + l].status = block;
+									}
+									for (int l = 0; l < kount_bk; l++) {
+										if (problem->allele_0[ap][promoter_number][s - 1 - l].status != 1)
+											problem->allele_0[ap][promoter_number][s - 1 - l].status = block;
+									}
+								} else {
+/*									mssa_check_site_overlap (problem->allele_0, ap, promoter_number, s, 0, 0);*/
+									int kount_fw = problem->allele_0[ap][promoter_number][s].blocked_fw;
+									int kount_bk = problem->allele_0[ap][promoter_number][s].blocked_bk;
+									int block = 0;
+									for (int l = 0; l < kount_fw; l++) {
+										if (problem->allele_0[ap][promoter_number][s + 1 + l].status != 1)
+											problem->allele_0[ap][promoter_number][s + 1 + l].status = block;
+									}
+									for (int l = 0; l < kount_bk; l++) {
+										if (problem->allele_0[ap][promoter_number][s - 1 - l].status != 1)
+											problem->allele_0[ap][promoter_number][s - 1 - l].status = block;
+									}
+								}
+							}
+						}
+						if (allele == 1) {
+							if (reaction_type == 1) { /* Binding */
+								s = site_tab_bind_1[ap][promoter_number][tf];
+								site_number = s;
+								problem->allele_1[ap][promoter_number][s].status = 1;
+								tc->solution_protein[ap * problem->n_tfs + tf] += -1;
+								tc->bound_protein[ap * problem->n_tfs + tf] -= -1;
+								if (tc->solution_protein[ap * problem->n_tfs + tf] < 0) {
+									g_warning("fast bind reaction n %d t %d: ap %d tf %d target %d < 0", reaction_number, reaction_type, ap, tf, promoter_number);
+									tc->solution_protein[ap * problem->n_tfs + tf] = 0;
+								}
+							/* allelle, nuc, gen, cur, type (0 - act, 1 - rep), block */
+								if (problem->parameters->T[promoter_number * problem->n_tfs + tf] < 0 && problem->parameters->range > 0) {
+/*									mssa_check_site_overlap (problem->allele_1, ap, promoter_number, s, 1, -1);*/
+									int kount_fw = problem->allele_1[ap][promoter_number][s].repressed_fw;
+									int kount_bk = problem->allele_1[ap][promoter_number][s].repressed_bk;
+									int block = -1;
+									for (int l = 0; l < kount_fw; l++) {
+										if (problem->allele_1[ap][promoter_number][s + 1 + l].status != 1)
+											problem->allele_1[ap][promoter_number][s + 1 + l].status = block;
+									}
+									for (int l = 0; l < kount_bk; l++) {
+										if (problem->allele_1[ap][promoter_number][s - 1 - l].status != 1)
+											problem->allele_1[ap][promoter_number][s - 1 - l].status = block;
+									}
+								} else {
+/*									mssa_check_site_overlap (problem->allele_1, ap, promoter_number, s, 0, -1);*/
+									int kount_fw = problem->allele_1[ap][promoter_number][s].blocked_fw;
+									int kount_bk = problem->allele_1[ap][promoter_number][s].blocked_bk;
+									int block = -1;
+									for (int l = 0; l < kount_fw; l++) {
+										if (problem->allele_1[ap][promoter_number][s + 1 + l].status != 1)
+											problem->allele_1[ap][promoter_number][s + 1 + l].status = block;
+									}
+									for (int l = 0; l < kount_bk; l++) {
+										if (problem->allele_1[ap][promoter_number][s - 1 - l].status != 1)
+											problem->allele_1[ap][promoter_number][s - 1 - l].status = block;
+									}
+								}
+							} else { /* Unbinding */
+								s = site_tab_unbind_1[ap][promoter_number][tf];
+								site_number = s;
+								problem->allele_1[ap][promoter_number][s].status = 0;
+								tc->solution_protein[ap * problem->n_tfs + tf] += 1;
+								tc->bound_protein[ap * problem->n_tfs + tf] -= 1;
+								if (tc->bound_protein[ap * problem->n_tfs + tf] < 0) {
+									g_warning("fast unbind reaction n %d t %d: ap %d tf %d target %d < 0", reaction_number, reaction_type, ap, tf, promoter_number);
+									tc->bound_protein[ap * problem->n_tfs + tf] = 0;
+								}
+							/* allelle, nuc, gen, cur, type (0 - act, 1 - rep), block */
+								if (problem->parameters->T[promoter_number * problem->n_tfs + tf] < 0 && problem->parameters->range > 0) {
+/*									mssa_check_site_overlap (problem->allele_1, ap, promoter_number, s, 1, 0);*/
+									int kount_fw = problem->allele_1[ap][promoter_number][s].repressed_fw;
+									int kount_bk = problem->allele_1[ap][promoter_number][s].repressed_bk;
+									int block = 0;
+									for (int l = 0; l < kount_fw; l++) {
+										if (problem->allele_1[ap][promoter_number][s + 1 + l].status != 1)
+											problem->allele_1[ap][promoter_number][s + 1 + l].status = block;
+									}
+									for (int l = 0; l < kount_bk; l++) {
+										if (problem->allele_1[ap][promoter_number][s - 1 - l].status != 1)
+											problem->allele_1[ap][promoter_number][s - 1 - l].status = block;
+									}
+								} else {
+/*									mssa_check_site_overlap (problem->allele_1, ap, promoter_number, s, 0, 0);*/
+									int kount_fw = problem->allele_1[ap][promoter_number][s].blocked_fw;
+									int kount_bk = problem->allele_1[ap][promoter_number][s].blocked_bk;
+									int block = 0;
+									for (int l = 0; l < kount_fw; l++) {
+										if (problem->allele_1[ap][promoter_number][s + 1 + l].status != 1)
+											problem->allele_1[ap][promoter_number][s + 1 + l].status = block;
+									}
+									for (int l = 0; l < kount_bk; l++) {
+										if (problem->allele_1[ap][promoter_number][s - 1 - l].status != 1)
+											problem->allele_1[ap][promoter_number][s - 1 - l].status = block;
+									}
+								}
+							}
+						}
+					}
+					for (i = 0; i < problem->n_target_genes; i++) {
+						for (j = 0; j < problem->n_tfs; j++) {
+							reaction_number = i * problem->n_tfs + j;
+							propensity_fast[ap][reaction_number] = probability_fast[ap][reaction_number] = 0;
+							reaction_number = problem->n_tfs * problem->n_target_genes + i * problem->n_tfs + j;
+							propensity_fast[ap][reaction_number] = probability_fast[ap][reaction_number] = 0;
+							reaction_number = 2 * problem->n_tfs * problem->n_target_genes + i * problem->n_tfs + j;
+							propensity_fast[ap][reaction_number] = probability_fast[ap][reaction_number] = 0;
+							reaction_number = 3 * problem->n_tfs * problem->n_target_genes + i * problem->n_tfs + j;
+							propensity_fast[ap][reaction_number] = probability_fast[ap][reaction_number] = 0;
+						}
+					}
+					t_fast += tau_fast;
+					inner_iter_kounter++;
+					if (t_fast > t_stop_fast) break;
+				}
+			}
+/* end of parallel region */
+		}
+		reaction_number_slow = mssa_get_reaction_slow_with_transport (tc->solution_mrna,
+		                                                              tc->solution_protein,
+		                                                              problem->allele_0,
+		                                                              problem->allele_1,
+		                                                              &tau_slow,
+		                                                              &reaction_type_slow,
+		                                                              &promoter_number_slow,
+		                                                              &nuc_number_slow,
+		                                                              problem->target_gene_index,
+		                                                              problem->n_sites,
+		                                                              propensity,
+		                                                              probability,
+		                                                              number_of_reactions_per_nuc,
+		                                                              number_of_reactions,
+		                                                              problem->parameters->T,
+		                                                              problem->parameters->protein_degradation,
+		                                                              problem->parameters->mrna_degradation,
+		                                                              problem->parameters->translation,
+		                                                              problem->parameters->transport_mrna,
+		                                                              problem->parameters->transport_protein,
+		                                                              problem->n_tfs,
+		                                                              problem->n_target_genes,
+		                                                              tc->n_nucs,
+		                                                              1 - slow_only);
+		iter_kounter++;
+		t_slow += tau_slow;
+/* Print the configuration of reg region to the log file */
+		if (log_file != NULL && g_strcmp0 (log_file, "nolog")) {
+			FILE*fp = fopen(log_file, "a");
+			fprintf(fp, "%d %d slow %d %f %f %d %d %d %d", problem->repeat, tc->kounter, iter_kounter, t_slow, tau_slow, reaction_number_slow, nuc_number_slow, promoter_number_slow, reaction_type_slow);
+			if (slow_only == 0) {
+				fprintf(fp, " fast %d allele_0", inner_iter_kounter);
+				for (int ap = 0; ap < tc->n_nucs; ap++) {
+					for(int i = 0; i < problem->n_target_genes; i++) {
+						for(int j = 0; j < problem->n_sites[i]; j++) {
+							fprintf(fp, " %d", problem->allele_0[ap][i][j].status);
+						}
+					}
+				}
+				fprintf(fp, " allele_1");
+				for (int ap = 0; ap < tc->n_nucs; ap++) {
+					for(int i = 0; i < problem->n_target_genes; i++) {
+						for(int j = 0; j < problem->n_sites[i]; j++) {
+							fprintf(fp, " %d", problem->allele_1[ap][i][j].status);
+						}
+					}
+				}
+			}
+			fprintf(fp, "\n");
+			fclose (fp);
+		} else if (log_file == NULL) {
+/* if log file is not given print log to the screen */
+			fprintf(stderr, "%d %d slow %d %f %f %d %d %d %d", problem->repeat, tc->kounter, iter_kounter, t_slow, tau_slow, reaction_number_slow, nuc_number_slow, promoter_number_slow, reaction_type_slow);
+			if (slow_only == 0) {
+				fprintf(stderr, " fast %d", inner_iter_kounter);
+			}
+			fprintf(stderr, "\n");
+		}
+	} /* end of slow loop */
+	for (int ap = 0; ap < tc->n_nucs; ap++) {
+		g_free (propensity_fast[ap]);
+		g_free (probability_fast[ap]);
+		for (int i = 0; i < problem->n_target_genes; i++) {
+			g_free(site_tab_bind_0[ap][i]);
+			g_free(site_tab_bind_1[ap][i]);
+			g_free(site_tab_unbind_0[ap][i]);
+			g_free(site_tab_unbind_1[ap][i]);
+		}
+		g_free(site_tab_bind_0[ap]);
+		g_free(site_tab_bind_1[ap]);
+		g_free(site_tab_unbind_0[ap]);
+		g_free(site_tab_unbind_1[ap]);
+		for (int l = 0; l < (int)(problem->sum_sites * fast_steps_frac); l++) {
+			g_free(random_table[ap][l]);
+		}
+		g_free(random_table[ap]);
+	}
+	g_free(propensity_fast);
+	g_free(probability_fast);
+	g_free(propensity);
+	g_free(probability);
+	g_free(site_tab_bind_0);
+	g_free(site_tab_bind_1);
+	g_free(site_tab_unbind_0);
+	g_free(site_tab_unbind_1);
+	g_free(random_table);
+	if (verbose) mssa_print_timeclass (tc, problem);
+}
+
+#ifdef OPENCL
+#pragma OPENCL EXTENSION cl_khr_fp64: enable
+#include "timing.h"
+#include "cl-helper.h"
+
+void propagate_with_transport_3 (MSSA_Timeclass *tc, MSSA_Problem *problem)
+{
+	if (verbose) printf("multiscale_ssa %d propagate %d\n", problem->repeat, tc->kounter);
+	double t_start_slow;
+	double t_stop_slow;
+	double t_slow, tau_slow;
+	double *propensity;
+	double *probability;
+	int number_of_reactions_per_nuc;
+	int number_of_reactions;
+/*
+  allocate and initialize CPU memory
+/*
+
+	number_of_reactions_per_nuc = 2 * problem->n_target_genes + /* transcription */
+		problem->n_target_genes + /* translation */
+		problem->n_target_genes + /* degradation mrna */
+		problem->n_target_genes + /* degradation protein */
+		problem->n_target_genes + /* left transport mrna */
+		problem->n_target_genes + /* right transport mrna */
+		problem->n_target_genes + /* left transport protein */
+		problem->n_target_genes; /* right transport protein */
+	number_of_reactions = number_of_reactions_per_nuc * tc->n_nucs; // - 2 * problem->n_target_genes;
+	int slow_only = (tc->type == 3) ? 1 : 0;
+	propensity = g_new0(double, number_of_reactions);
+	probability = g_new0(double, number_of_reactions);
+	double **propensity_fast;
+	double **probability_fast;
+	int number_of_reactions_fast_per_nuc = 4 * problem->n_tfs * problem->n_target_genes; /* bind/unbind each tf in each promotor */
+	propensity_fast = g_new0(double*, tc->n_nucs);
+	probability_fast = g_new0(double*, tc->n_nucs);
+	int ***site_tab_bind_0 = g_new0(int**, tc->n_nucs);
+	int ***site_tab_bind_1 = g_new0(int**, tc->n_nucs);
+	int ***site_tab_unbind_0 = g_new0(int**, tc->n_nucs);
+	int ***site_tab_unbind_1 = g_new0(int**, tc->n_nucs);
+	double ***random_table = g_new0(double**, tc->n_nucs);
+	for (int ap = 0; ap < tc->n_nucs; ap++) {
+		propensity_fast[ap] = g_new0(double, number_of_reactions_fast_per_nuc);
+		probability_fast[ap] = g_new0(double, number_of_reactions_fast_per_nuc);
+		site_tab_bind_0[ap] = g_new0(int*, problem->n_target_genes);
+		site_tab_bind_1[ap] = g_new0(int*, problem->n_target_genes);
+		site_tab_unbind_0[ap] = g_new0(int*, problem->n_target_genes);
+		site_tab_unbind_1[ap] = g_new0(int*, problem->n_target_genes);
+		for (int i = 0; i < problem->n_target_genes; i++) {
+			site_tab_bind_0[ap][i] = g_new0(int, problem->n_tfs);
+			site_tab_bind_1[ap][i] = g_new0(int, problem->n_tfs);
+			site_tab_unbind_0[ap][i] = g_new0(int, problem->n_tfs);
+			site_tab_unbind_1[ap][i] = g_new0(int, problem->n_tfs);
+		}
+		random_table[ap] = g_new0(double*, (int)(problem->sum_sites * fast_steps_frac));
+		for (int l = 0; l < (int)(problem->sum_sites * fast_steps_frac); l++) {
+			random_table[ap][l] = g_new0(double, 2 + 4 * problem->n_target_genes);
+		}
+	}
+/*
+ allocate device memory
+*/
+	cl_context ctx;
+	cl_command_queue queue;
+	create_context_on(CHOOSE_INTERACTIVELY, CHOOSE_INTERACTIVELY, 0, &ctx, &queue, 0);
+	print_device_info_from_queue(queue);
+	cl_int status;
+	cl_mem buf_a = clCreateBuffer(ctx, CL_MEM_READ_WRITE,
+	  sizeof(double) * n, 0, &status);
+	CHECK_CL_ERROR(status, "clCreateBuffer");
+
+	cl_mem buf_b = clCreateBuffer(ctx, CL_MEM_READ_WRITE,
+	  sizeof(double) * n, 0, &status);
+	CHECK_CL_ERROR(status, "clCreateBuffer");
+
+	cl_mem buf_c = clCreateBuffer(ctx, CL_MEM_READ_WRITE,
+	  sizeof(double) * n, 0, &status);
+	CHECK_CL_ERROR(status, "clCreateBuffer");
+/*
+ transfer to device
+*/
+
+	CALL_CL_GUARDED(clEnqueueWriteBuffer, (
+		queue, buf_a, /*blocking*/ CL_TRUE, /*offset*/ 0,
+		n * sizeof(double), a,
+		0, NULL, NULL));
+
+	CALL_CL_GUARDED(clEnqueueWriteBuffer, (
+		queue, buf_b, /*blocking*/ CL_TRUE, /*offset*/ 0,
+		n * sizeof(double), b,
+		0, NULL, NULL));
+/*
+ run code on device
+*/
+	CALL_CL_GUARDED(clFinish, (queue));
+
+	GString*krn = g_string_new("#pragma OPENCL EXTENSION cl_khr_fp64: enable\n");
+	g_string_append_printf(krn, "__kernel void mssa_reaction_fast(\n");
+	g_string_append_printf(krn, "__global const double *solution,\n");
+	g_string_append_printf(krn, "__global const double *bound,\n");
+	g_string_append_printf(krn, "__global const MSSA_site ***allele_0,\n");
+	g_string_append_printf(krn, "__global const MSSA_site ***allele_1,\n");
+	g_string_append_printf(krn, "__global const double *propensity,\n");
+	g_string_append_printf(krn, "__global const double *probability,\n");
+	g_string_append_printf(krn, "__global const int **site_tab_bind_0,\n");
+	g_string_append_printf(krn, "__global const int **site_tab_bind_1,\n");
+	g_string_append_printf(krn, "__global const int **site_tab_unbind_0,\n");
+	g_string_append_printf(krn, "__global const int **site_tab_unbind_1,\n");
+	g_string_append_printf(krn, "__global const int *n_sites,\n");
+	g_string_append_printf(krn, "int n_tfs,\n");
+	g_string_append_printf(krn, "int n_target_genes,\n");
+	g_string_append_printf(krn, "__global const double *parameters,\n");
+	g_string_append_printf(krn, "double range,\n");
+	g_string_append_printf(krn, "int ap)\n");
+	g_string_append_printf(krn, "{\n");
+  	g_string_append_printf(krn, "int gid = get_global_id(0);\n");
+
+/* start of parallel region */
+	g_string_append_printf(krn, "			for (int ap = 0; ap < tc->n_nucs; ap++) {\n");
+	g_string_append_printf(krn, "				double t_start_fast;\n");
+	g_string_append_printf(krn, "				double t_stop_fast;\n");
+	g_string_append_printf(krn, "				double t_fast;\n");
+	g_string_append_printf(krn, "				t_start_fast = 0;\n");
+	g_string_append_printf(krn, "				t_stop_fast = fast_time_max;\n");
+	g_string_append_printf(krn, "				t_fast = t_start_fast;\n");
+	g_string_append_printf(krn, "				for (int l = 0; l < (int)(problem->sum_sites * fast_steps_frac); l++) {\n");
+	g_string_append_printf(krn, "					double tau_fast;\n");
+	g_string_append_printf(krn, "					int promoter_number, tf;\n");
+	g_string_append_printf(krn, "					int site_number;\n");
+	g_string_append_printf(krn, "					int reaction_type;\n");
+	g_string_append_printf(krn, "					int reaction_number;\n");
+	g_string_append_printf(krn, "					int i, j, k, s, sl, found, allele, r_counter;\n");
+	g_string_append_printf(krn, "					double aggregate;\n");
+	g_string_append_printf(krn, "					double prop_sum = 0;\n");
+	g_string_append_printf(krn, "					double random = random_table[ap][l][0];\n");
+	g_string_append_printf(krn, "					r_counter = 2;\n");
+				/* Binding */
+	g_string_append_printf(krn, "					for (i = 0; i < problem->n_target_genes; i++) {\n");
+	g_string_append_printf(krn, "						sl = (int)(random_table[ap][l][r_counter++] * problem->n_sites[i]);\n");
+	g_string_append_printf(krn, "						s = sl;\n");
+	g_string_append_printf(krn, "						for (k = 0; k < problem->n_sites[i]; k++) {\n");
+	g_string_append_printf(krn, "							if (problem->allele_0[ap][i][s].status == 0) {\n");
+	g_string_append_printf(krn, "								double prop = 0;\n");
+	g_string_append_printf(krn, "								j = problem->allele_0[ap][i][s].tf_index;\n");
+	g_string_append_printf(krn, "								prop = tc->solution_protein[ap * problem->n_tfs + j] * problem->allele_0[ap][i][s].energy;\n");
+	g_string_append_printf(krn, "								reaction_number = i * problem->n_tfs + j;\n");
+	g_string_append_printf(krn, "								propensity_fast[ap][reaction_number] += prop;\n");
+	g_string_append_printf(krn, "								site_tab_bind_0[ap][i][j] = s;\n");
+	g_string_append_printf(krn, "								prop_sum += prop;\n");
+	g_string_append_printf(krn, "							}\n");
+	g_string_append_printf(krn, "							s++;\n");
+	g_string_append_printf(krn, "							if (s > problem->n_sites[i] - 1) {\n");
+	g_string_append_printf(krn, "								s = 0;\n");
+	g_string_append_printf(krn, "							}\n");
+	g_string_append_printf(krn, "						}\n");
+	g_string_append_printf(krn, "					}\n");
+	g_string_append_printf(krn, "					for (i = 0; i < problem->n_target_genes; i++) {\n");
+	g_string_append_printf(krn, "						sl = (int)(random_table[ap][l][r_counter++] * problem->n_sites[i]);\n");
+	g_string_append_printf(krn, "						s = sl;\n");
+	g_string_append_printf(krn, "						for (k = 0; k < problem->n_sites[i]; k++) {\n");
+	g_string_append_printf(krn, "							if (problem->allele_1[ap][i][s].status == 0) {\n");
+	g_string_append_printf(krn, "								double prop = 0;\n");
+	g_string_append_printf(krn, "								j = problem->allele_1[ap][i][s].tf_index;\n");
+	g_string_append_printf(krn, "								prop = tc->solution_protein[ap * problem->n_tfs + j] * problem->allele_1[ap][i][k].energy;\n");
+	g_string_append_printf(krn, "								reaction_number = problem->n_tfs * problem->n_target_genes + i * problem->n_tfs + j;\n");
+	g_string_append_printf(krn, "								propensity_fast[ap][reaction_number] += prop;\n");
+	g_string_append_printf(krn, "								site_tab_bind_1[ap][i][j] = s;\n");
+	g_string_append_printf(krn, "								prop_sum += prop;\n");
+	g_string_append_printf(krn, "							}\n");
+	g_string_append_printf(krn, "							s++;\n");
+	g_string_append_printf(krn, "							if (s > problem->n_sites[i] - 1) {\n");
+	g_string_append_printf(krn, "								s = 0;\n");
+	g_string_append_printf(krn, "							}\n");
+	g_string_append_printf(krn, "						}\n");
+	g_string_append_printf(krn, "					}\n");
+				/* Unbinding */
+	g_string_append_printf(krn, "					for (i = 0; i < problem->n_target_genes; i++) {\n");
+	g_string_append_printf(krn, "						sl = (int)(random_table[ap][l][r_counter++] * problem->n_sites[i]);\n");
+	g_string_append_printf(krn, "						s = sl;\n");
+	g_string_append_printf(krn, "						for (k = 0; k < problem->n_sites[i]; k++) {\n");
+	g_string_append_printf(krn, "							if (problem->allele_0[ap][i][s].status == 1) {\n");
+	g_string_append_printf(krn, "								double prop = 0;\n");
+	g_string_append_printf(krn, "								j = problem->allele_0[ap][i][s].tf_index;\n");
+	g_string_append_printf(krn, "								prop = tc->bound_protein[ap * problem->n_tfs + j] * problem->allele_0[ap][i][s].energy;\n");
+	g_string_append_printf(krn, "								reaction_number = 2 * problem->n_tfs * problem->n_target_genes + i * problem->n_tfs + j;\n");
+	g_string_append_printf(krn, "								propensity_fast[ap][reaction_number] += prop;\n");
+	g_string_append_printf(krn, "								site_tab_unbind_0[ap][i][j] = s;\n");
+	g_string_append_printf(krn, "								prop_sum += prop;\n");
+	g_string_append_printf(krn, "							}\n");
+	g_string_append_printf(krn, "							s++;\n");
+	g_string_append_printf(krn, "							if (s > problem->n_sites[i] - 1) {\n");
+	g_string_append_printf(krn, "								s = 0;\n");
+	g_string_append_printf(krn, "							}\n");
+	g_string_append_printf(krn, "						}\n");
+	g_string_append_printf(krn, "					}\n");
+	g_string_append_printf(krn, "					for (i = 0; i < problem->n_target_genes; i++) {\n");
+	g_string_append_printf(krn, "						sl = (int)(random_table[ap][l][r_counter++] * problem->n_sites[i]);\n");
+	g_string_append_printf(krn, "						s = sl;\n");
+	g_string_append_printf(krn, "						for (k = 0; k < problem->n_sites[i]; k++) {\n");
+	g_string_append_printf(krn, "							if (problem->allele_1[ap][i][s].status == 1) {\n");
+	g_string_append_printf(krn, "								double prop = 0; /* Sum of energies of bound bs */\n");
+	g_string_append_printf(krn, "								j = problem->allele_1[ap][i][s].tf_index;\n");
+	g_string_append_printf(krn, "								prop = tc->bound_protein[ap * problem->n_tfs + j] * problem->allele_1[ap][i][s].energy;\n");
+	g_string_append_printf(krn, "								reaction_number = 3 * problem->n_tfs * problem->n_target_genes + i * problem->n_tfs + j;\n");
+	g_string_append_printf(krn, "								propensity_fast[ap][reaction_number] += prop;\n");
+	g_string_append_printf(krn, "								site_tab_unbind_1[ap][i][j] = s;\n");
+	g_string_append_printf(krn, "								prop_sum += prop;\n");
+	g_string_append_printf(krn, "							}\n");
+	g_string_append_printf(krn, "							s++;\n");
+	g_string_append_printf(krn, "							if (s > problem->n_sites[i] - 1) {\n");
+	g_string_append_printf(krn, "								s = 0;\n");
+	g_string_append_printf(krn, "							}\n");
+	g_string_append_printf(krn, "						}\n");
+	g_string_append_printf(krn, "					}\n");
+	g_string_append_printf(krn, "					if (prop_sum <= 0.00000000001) {\n");
+	g_string_append_printf(krn, "						if (verbose) {\n");
+	g_string_append_printf(krn, "							int y = 0;\n");
+	g_string_append_printf(krn, "							for (i = 0; i < problem->n_target_genes; i++) {\n");
+	g_string_append_printf(krn, "								for (j = 0; j < problem->n_tfs; j++) {\n");
+	g_string_append_printf(krn, "									if (tc->bound_protein[ap * problem->n_tfs + j] > 0) y++;\n");
+	g_string_append_printf(krn, "								}\n");
+	g_string_append_printf(krn, "							}\n");
+	g_string_append_printf(krn, "							int z = 0;\n");
+	g_string_append_printf(krn, "							for (i = 0; i < problem->n_target_genes; i++) {\n");
+	g_string_append_printf(krn, "								for (j = 0; j < problem->n_tfs; j++) {\n");
+	g_string_append_printf(krn, "									if (tc->solution_protein[ap * problem->n_tfs + j] > 0) z++;\n");
+	g_string_append_printf(krn, "								}\n");
+	g_string_append_printf(krn, "							}\n");
+	g_string_append_printf(krn, "							int p = 0;\n");
+	g_string_append_printf(krn, "							for (i = 0; i < 4 * problem->n_tfs * problem->n_target_genes; i++) {\n");
+	g_string_append_printf(krn, "								if (propensity_fast[ap][i] < 0) p++;\n");
+	g_string_append_printf(krn, "							}\n");
+	g_string_append_printf(krn, "							g_warning("fast %d: Sum of propensities is too small %g! bound %d sol %d p %d", ap, prop_sum, y, z, p);\n");
+	g_string_append_printf(krn, "						} else {\n");
+	g_string_append_printf(krn, "							g_warning("fast %d: Sum of propensities is too small %g!", ap, prop_sum);\n");
+	g_string_append_printf(krn, "						}\n");
+	g_string_append_printf(krn, "						tau_fast = TMAX;\n");
+	g_string_append_printf(krn, "						promoter_number = -1;\n");
+	g_string_append_printf(krn, "						tf = -1;\n");
+	g_string_append_printf(krn, "						reaction_type = -1;\n");
+	g_string_append_printf(krn, "						site_number = -1;\n");
+	g_string_append_printf(krn, "						break;\n");
+	g_string_append_printf(krn, "					}\n");
+	g_string_append_printf(krn, "					found = 0;\n");
+	g_string_append_printf(krn, "					aggregate = 0;\n");
+				/* Binding */
+	g_string_append_printf(krn, "					for (i = 0; i < problem->n_target_genes; i++) {\n");
+	g_string_append_printf(krn, "						for (j = 0; j < problem->n_tfs; j++) {\n");
+	g_string_append_printf(krn, "							reaction_number = i * problem->n_tfs + j;\n");
+	g_string_append_printf(krn, "							aggregate += propensity_fast[ap][reaction_number];\n");
+	g_string_append_printf(krn, "							probability_fast[ap][reaction_number] = aggregate / prop_sum;\n");
+	g_string_append_printf(krn, "							if (random < probability_fast[ap][reaction_number]) {\n");
+	g_string_append_printf(krn, "								found = 1;\n");
+	g_string_append_printf(krn, "								promoter_number = i;\n");
+	g_string_append_printf(krn, "								tf = j;\n");
+	g_string_append_printf(krn, "								reaction_type = 1;\n");
+	g_string_append_printf(krn, "								allele = 0;\n");
+	g_string_append_printf(krn, "								break;\n");
+	g_string_append_printf(krn, "							}\n");
+	g_string_append_printf(krn, "						}\n");
+	g_string_append_printf(krn, "						if (found == 1) break;\n");
+	g_string_append_printf(krn, "					}\n");
+	g_string_append_printf(krn, "					if (found == 0) {\n");
+	g_string_append_printf(krn, "						for (i = 0; i < problem->n_target_genes; i++) {\n");
+	g_string_append_printf(krn, "							for (j = 0; j < problem->n_tfs; j++) {\n");
+	g_string_append_printf(krn, "								reaction_number = problem->n_tfs * problem->n_target_genes + i * problem->n_tfs + j;\n");
+	g_string_append_printf(krn, "								aggregate += propensity_fast[ap][reaction_number];\n");
+	g_string_append_printf(krn, "								probability_fast[ap][reaction_number] = aggregate / prop_sum;\n");
+	g_string_append_printf(krn, "								if (random < probability_fast[ap][reaction_number]) {\n");
+	g_string_append_printf(krn, "									found = 1;\n");
+	g_string_append_printf(krn, "									promoter_number = i;\n");
+	g_string_append_printf(krn, "									tf = j;\n");
+	g_string_append_printf(krn, "									reaction_type = 1;\n");
+	g_string_append_printf(krn, "									allele = 1;\n");
+	g_string_append_printf(krn, "									break;\n");
+	g_string_append_printf(krn, "								}\n");
+	g_string_append_printf(krn, "							}\n");
+	g_string_append_printf(krn, "							if (found == 1) break;\n");
+	g_string_append_printf(krn, "						}\n");
+	g_string_append_printf(krn, "					}\n");
+				/* Unbinding */
+	g_string_append_printf(krn, "					if (found == 0) {\n");
+	g_string_append_printf(krn, "						for (i = 0; i < problem->n_target_genes; i++) {\n");
+	g_string_append_printf(krn, "							for (j = 0; j < problem->n_tfs; j++) {\n");
+	g_string_append_printf(krn, "								reaction_number = 2 * problem->n_tfs * problem->n_target_genes + i * problem->n_tfs + j;\n");
+	g_string_append_printf(krn, "								aggregate += propensity_fast[ap][reaction_number];\n");
+	g_string_append_printf(krn, "								probability_fast[ap][reaction_number] = aggregate / prop_sum;\n");
+	g_string_append_printf(krn, "								if (random < probability_fast[ap][reaction_number]) {\n");
+	g_string_append_printf(krn, "									found = 1;\n");
+	g_string_append_printf(krn, "									promoter_number = i;\n");
+	g_string_append_printf(krn, "									tf = j;\n");
+	g_string_append_printf(krn, "									reaction_type = 0;\n");
+	g_string_append_printf(krn, "									allele = 0;\n");
+	g_string_append_printf(krn, "									break;\n");
+	g_string_append_printf(krn, "								}\n");
+	g_string_append_printf(krn, "							}\n");
+	g_string_append_printf(krn, "							if (found == 1) break;\n");
+	g_string_append_printf(krn, "						}\n");
+	g_string_append_printf(krn, "					}\n");
+	g_string_append_printf(krn, "					if (found == 0) {\n");
+	g_string_append_printf(krn, "						for (i = 0; i < problem->n_target_genes; i++) {\n");
+	g_string_append_printf(krn, "							for (j = 0; j < problem->n_tfs; j++) {\n");
+	g_string_append_printf(krn, "								reaction_number = 3 * problem->n_tfs * problem->n_target_genes + i * problem->n_tfs + j;\n");
+	g_string_append_printf(krn, "								aggregate += propensity_fast[ap][reaction_number];\n");
+	g_string_append_printf(krn, "								probability_fast[ap][reaction_number] = aggregate / prop_sum;\n");
+	g_string_append_printf(krn, "								if (random < probability_fast[ap][reaction_number]) {\n");
+	g_string_append_printf(krn, "									found = 1;\n");
+	g_string_append_printf(krn, "									promoter_number = i;\n");
+	g_string_append_printf(krn, "									tf = j;\n");
+	g_string_append_printf(krn, "									reaction_type = 0;\n");
+	g_string_append_printf(krn, "									allele = 1;\n");
+	g_string_append_printf(krn, "									break;\n");
+	g_string_append_printf(krn, "								}\n");
+	g_string_append_printf(krn, "							}\n");
+	g_string_append_printf(krn, "							if (found == 1) break;\n");
+	g_string_append_printf(krn, "						}\n");
+	g_string_append_printf(krn, "					}\n");
+	g_string_append_printf(krn, "					tau_fast = -log(random_table[ap][l][1]) / prop_sum;\n");
+	g_string_append_printf(krn, "					site_number = -1;\n");
+	g_string_append_printf(krn, "					if (found == 1) {\n");
+	g_string_append_printf(krn, "						if (allele == 0) {\n");
+	g_string_append_printf(krn, "							if (reaction_type == 1) { /* Binding */\n");
+	g_string_append_printf(krn, "								s = site_tab_bind_0[ap][promoter_number][tf];\n");
+	g_string_append_printf(krn, "								site_number = s;\n");
+	g_string_append_printf(krn, "								problem->allele_0[ap][promoter_number][s].status = 1;\n");
+	g_string_append_printf(krn, "								tc->solution_protein[ap * problem->n_tfs + tf] += -1;\n");
+	g_string_append_printf(krn, "								tc->bound_protein[ap * problem->n_tfs + tf] -= -1;\n");
+	g_string_append_printf(krn, "								if (tc->solution_protein[ap * problem->n_tfs + tf] < 0) {\n");
+	g_string_append_printf(krn, "									g_warning("fast bind reaction n %d t %d: ap %d tf %d target %d < 0", reaction_number, reaction_type, ap, tf, promoter_number);\n");
+	g_string_append_printf(krn, "									tc->solution_protein[ap * problem->n_tfs + tf] = 0;\n");
+	g_string_append_printf(krn, "								}\n");
+							/* allelle, nuc, gen, cur, type (0 - act, 1 - rep), block */
+	g_string_append_printf(krn, "								if (problem->parameters->T[promoter_number * problem->n_tfs + tf] < 0 && problem->parameters->range > 0) {\n");
+/*									mssa_check_site_overlap (problem->allele_0, ap, promoter_number, s, 1, -1);*/\n");
+	g_string_append_printf(krn, "									int kount_fw = problem->allele_0[ap][promoter_number][s].repressed_fw;\n");
+	g_string_append_printf(krn, "									int kount_bk = problem->allele_0[ap][promoter_number][s].repressed_bk;\n");
+	g_string_append_printf(krn, "									int block = -1;\n");
+	g_string_append_printf(krn, "									for (int l = 0; l < kount_fw; l++) {\n");
+	g_string_append_printf(krn, "										if (problem->allele_0[ap][promoter_number][s + 1 + l].status != 1)\n");
+	g_string_append_printf(krn, "											problem->allele_0[ap][promoter_number][s + 1 + l].status = block;\n");
+	g_string_append_printf(krn, "									}\n");
+	g_string_append_printf(krn, "									for (int l = 0; l < kount_bk; l++) {\n");
+	g_string_append_printf(krn, "										if (problem->allele_0[ap][promoter_number][s - 1 - l].status != 1)\n");
+	g_string_append_printf(krn, "											problem->allele_0[ap][promoter_number][s - 1 - l].status = block;\n");
+	g_string_append_printf(krn, "									}\n");
+	g_string_append_printf(krn, "								} else {\n");
+/*									mssa_check_site_overlap (problem->allele_0, ap, promoter_number, s, 0, -1);*/
+	g_string_append_printf(krn, "									int kount_fw = problem->allele_0[ap][promoter_number][s].blocked_fw;\n");
+	g_string_append_printf(krn, "									int kount_bk = problem->allele_0[ap][promoter_number][s].blocked_bk;\n");
+	g_string_append_printf(krn, "									int block = -1;\n");
+	g_string_append_printf(krn, "									for (int l = 0; l < kount_fw; l++) {\n");
+	g_string_append_printf(krn, "										if (problem->allele_0[ap][promoter_number][s + 1 + l].status != 1)\n");
+	g_string_append_printf(krn, "											problem->allele_0[ap][promoter_number][s + 1 + l].status = block;\n");
+	g_string_append_printf(krn, "									}\n");
+	g_string_append_printf(krn, "									for (int l = 0; l < kount_bk; l++) {\n");
+	g_string_append_printf(krn, "										if (problem->allele_0[ap][promoter_number][s - 1 - l].status != 1)\n");
+	g_string_append_printf(krn, "											problem->allele_0[ap][promoter_number][s - 1 - l].status = block;\n");
+	g_string_append_printf(krn, "									}\n");
+	g_string_append_printf(krn, "								}\n");
+	g_string_append_printf(krn, "							} else { /* Unbinding */\n");
+	g_string_append_printf(krn, "								s = site_tab_unbind_0[ap][promoter_number][tf];\n");
+	g_string_append_printf(krn, "								site_number = s;\n");
+	g_string_append_printf(krn, "								problem->allele_0[ap][promoter_number][s].status = 0;\n");
+	g_string_append_printf(krn, "								tc->solution_protein[ap * problem->n_tfs + tf] += 1;\n");
+	g_string_append_printf(krn, "								tc->bound_protein[ap * problem->n_tfs + tf] -= 1;\n");
+	g_string_append_printf(krn, "								if (tc->bound_protein[ap * problem->n_tfs + tf] < 0) {\n");
+	g_string_append_printf(krn, "									g_warning("fast unbind reaction n %d t %d: ap %d tf %d target %d < 0", reaction_number, reaction_type, ap, tf, promoter_number);\n");
+	g_string_append_printf(krn, "									tc->bound_protein[ap * problem->n_tfs + tf] = 0;\n");
+	g_string_append_printf(krn, "								}\n");
+							/* allelle, nuc, gen, cur, type (0 - act, 1 - rep), block */
+	g_string_append_printf(krn, "								if (problem->parameters->T[promoter_number * problem->n_tfs + tf] < 0 && problem->parameters->range > 0) {\n");
+/*									mssa_check_site_overlap (problem->allele_0, ap, promoter_number, s, 1, 0);*/\n");
+	g_string_append_printf(krn, "									int kount_fw = problem->allele_0[ap][promoter_number][s].repressed_fw;\n");
+	g_string_append_printf(krn, "									int kount_bk = problem->allele_0[ap][promoter_number][s].repressed_bk;\n");
+	g_string_append_printf(krn, "									int block = 0;\n");
+	g_string_append_printf(krn, "									for (int l = 0; l < kount_fw; l++) {\n");
+	g_string_append_printf(krn, "										if (problem->allele_0[ap][promoter_number][s + 1 + l].status != 1)\n");
+	g_string_append_printf(krn, "											problem->allele_0[ap][promoter_number][s + 1 + l].status = block;\n");
+	g_string_append_printf(krn, "									}\n");
+	g_string_append_printf(krn, "									for (int l = 0; l < kount_bk; l++) {\n");
+	g_string_append_printf(krn, "										if (problem->allele_0[ap][promoter_number][s - 1 - l].status != 1)\n");
+	g_string_append_printf(krn, "											problem->allele_0[ap][promoter_number][s - 1 - l].status = block;\n");
+	g_string_append_printf(krn, "									}\n");
+	g_string_append_printf(krn, "								} else {\n");
+/*									mssa_check_site_overlap (problem->allele_0, ap, promoter_number, s, 0, 0);*/
+	g_string_append_printf(krn, "									int kount_fw = problem->allele_0[ap][promoter_number][s].blocked_fw;\n");
+	g_string_append_printf(krn, "									int kount_bk = problem->allele_0[ap][promoter_number][s].blocked_bk;\n");
+	g_string_append_printf(krn, "									int block = 0;\n");
+	g_string_append_printf(krn, "									for (int l = 0; l < kount_fw; l++) {\n");
+	g_string_append_printf(krn, "										if (problem->allele_0[ap][promoter_number][s + 1 + l].status != 1)\n");
+	g_string_append_printf(krn, "											problem->allele_0[ap][promoter_number][s + 1 + l].status = block;\n");
+	g_string_append_printf(krn, "									}\n");
+	g_string_append_printf(krn, "									for (int l = 0; l < kount_bk; l++) {\n");
+	g_string_append_printf(krn, "										if (problem->allele_0[ap][promoter_number][s - 1 - l].status != 1)\n");
+	g_string_append_printf(krn, "											problem->allele_0[ap][promoter_number][s - 1 - l].status = block;\n");
+	g_string_append_printf(krn, "									}\n");
+	g_string_append_printf(krn, "								}\n");
+	g_string_append_printf(krn, "							}\n");
+	g_string_append_printf(krn, "						}\n");
+	g_string_append_printf(krn, "						if (allele == 1) {\n");
+	g_string_append_printf(krn, "							if (reaction_type == 1) { /* Binding */\n");
+	g_string_append_printf(krn, "								s = site_tab_bind_1[ap][promoter_number][tf];\n");
+	g_string_append_printf(krn, "								site_number = s;\n");
+	g_string_append_printf(krn, "								problem->allele_1[ap][promoter_number][s].status = 1;\n");
+	g_string_append_printf(krn, "								tc->solution_protein[ap * problem->n_tfs + tf] += -1;\n");
+	g_string_append_printf(krn, "								tc->bound_protein[ap * problem->n_tfs + tf] -= -1;\n");
+	g_string_append_printf(krn, "								if (tc->solution_protein[ap * problem->n_tfs + tf] < 0) {\n");
+	g_string_append_printf(krn, "									g_warning("fast bind reaction n %d t %d: ap %d tf %d target %d < 0", reaction_number, reaction_type, ap, tf, promoter_number);\n");
+	g_string_append_printf(krn, "									tc->solution_protein[ap * problem->n_tfs + tf] = 0;\n");
+	g_string_append_printf(krn, "								}\n");
+							/* allelle, nuc, gen, cur, type (0 - act, 1 - rep), block */
+	g_string_append_printf(krn, "								if (problem->parameters->T[promoter_number * problem->n_tfs + tf] < 0 && problem->parameters->range > 0) {\n");
+/*									mssa_check_site_overlap (problem->allele_1, ap, promoter_number, s, 1, -1);*/
+	g_string_append_printf(krn, "									int kount_fw = problem->allele_1[ap][promoter_number][s].repressed_fw;\n");
+	g_string_append_printf(krn, "									int kount_bk = problem->allele_1[ap][promoter_number][s].repressed_bk;\n");
+	g_string_append_printf(krn, "									int block = -1;\n");
+	g_string_append_printf(krn, "									for (int l = 0; l < kount_fw; l++) {\n");
+	g_string_append_printf(krn, "										if (problem->allele_1[ap][promoter_number][s + 1 + l].status != 1)\n");
+	g_string_append_printf(krn, "											problem->allele_1[ap][promoter_number][s + 1 + l].status = block;\n");
+	g_string_append_printf(krn, "									}\n");
+	g_string_append_printf(krn, "									for (int l = 0; l < kount_bk; l++) {\n");
+	g_string_append_printf(krn, "										if (problem->allele_1[ap][promoter_number][s - 1 - l].status != 1)\n");
+	g_string_append_printf(krn, "											problem->allele_1[ap][promoter_number][s - 1 - l].status = block;\n");
+	g_string_append_printf(krn, "									}\n");
+	g_string_append_printf(krn, "								} else {\n");
+/*									mssa_check_site_overlap (problem->allele_1, ap, promoter_number, s, 0, -1);*/
+	g_string_append_printf(krn, "									int kount_fw = problem->allele_1[ap][promoter_number][s].blocked_fw;\n");
+	g_string_append_printf(krn, "									int kount_bk = problem->allele_1[ap][promoter_number][s].blocked_bk;\n");
+	g_string_append_printf(krn, "									int block = -1;\n");
+	g_string_append_printf(krn, "									for (int l = 0; l < kount_fw; l++) {\n");
+	g_string_append_printf(krn, "										if (problem->allele_1[ap][promoter_number][s + 1 + l].status != 1)\n");
+	g_string_append_printf(krn, "											problem->allele_1[ap][promoter_number][s + 1 + l].status = block;\n");
+	g_string_append_printf(krn, "									}\n");
+	g_string_append_printf(krn, "									for (int l = 0; l < kount_bk; l++) {\n");
+	g_string_append_printf(krn, "										if (problem->allele_1[ap][promoter_number][s - 1 - l].status != 1)\n");
+	g_string_append_printf(krn, "											problem->allele_1[ap][promoter_number][s - 1 - l].status = block;\n");
+	g_string_append_printf(krn, "									}\n");
+	g_string_append_printf(krn, "								}\n");
+	g_string_append_printf(krn, "							} else { /* Unbinding */\n");
+	g_string_append_printf(krn, "								s = site_tab_unbind_1[ap][promoter_number][tf];\n");
+	g_string_append_printf(krn, "								site_number = s;\n");
+	g_string_append_printf(krn, "								problem->allele_1[ap][promoter_number][s].status = 0;\n");
+	g_string_append_printf(krn, "								tc->solution_protein[ap * problem->n_tfs + tf] += 1;\n");
+	g_string_append_printf(krn, "								tc->bound_protein[ap * problem->n_tfs + tf] -= 1;\n");
+	g_string_append_printf(krn, "								if (tc->bound_protein[ap * problem->n_tfs + tf] < 0) {\n");
+	g_string_append_printf(krn, "									g_warning("fast unbind reaction n %d t %d: ap %d tf %d target %d < 0", reaction_number, reaction_type, ap, tf, promoter_number);\n");
+	g_string_append_printf(krn, "									tc->bound_protein[ap * problem->n_tfs + tf] = 0;\n");
+	g_string_append_printf(krn, "								}\n");
+							/* allelle, nuc, gen, cur, type (0 - act, 1 - rep), block */
+	g_string_append_printf(krn, "								if (problem->parameters->T[promoter_number * problem->n_tfs + tf] < 0 && problem->parameters->range > 0) {\n");
+/*									mssa_check_site_overlap (problem->allele_1, ap, promoter_number, s, 1, 0);*/
+	g_string_append_printf(krn, "									int kount_fw = problem->allele_1[ap][promoter_number][s].repressed_fw;\n");
+	g_string_append_printf(krn, "									int kount_bk = problem->allele_1[ap][promoter_number][s].repressed_bk;\n");
+	g_string_append_printf(krn, "									int block = 0;\n");
+	g_string_append_printf(krn, "									for (int l = 0; l < kount_fw; l++) {\n");
+	g_string_append_printf(krn, "										if (problem->allele_1[ap][promoter_number][s + 1 + l].status != 1)\n");
+	g_string_append_printf(krn, "											problem->allele_1[ap][promoter_number][s + 1 + l].status = block;\n");
+	g_string_append_printf(krn, "									}\n");
+	g_string_append_printf(krn, "									for (int l = 0; l < kount_bk; l++) {\n");
+	g_string_append_printf(krn, "										if (problem->allele_1[ap][promoter_number][s - 1 - l].status != 1)\n");
+	g_string_append_printf(krn, "											problem->allele_1[ap][promoter_number][s - 1 - l].status = block;\n");
+	g_string_append_printf(krn, "									}\n");
+	g_string_append_printf(krn, "								} else {\n");
+/*									mssa_check_site_overlap (problem->allele_1, ap, promoter_number, s, 0, 0);*/
+	g_string_append_printf(krn, "									int kount_fw = problem->allele_1[ap][promoter_number][s].blocked_fw;\n");
+	g_string_append_printf(krn, "									int kount_bk = problem->allele_1[ap][promoter_number][s].blocked_bk;\n");
+	g_string_append_printf(krn, "									int block = 0;\n");
+	g_string_append_printf(krn, "									for (int l = 0; l < kount_fw; l++) {\n");
+	g_string_append_printf(krn, "										if (problem->allele_1[ap][promoter_number][s + 1 + l].status != 1)\n");
+	g_string_append_printf(krn, "											problem->allele_1[ap][promoter_number][s + 1 + l].status = block;\n");
+	g_string_append_printf(krn, "									}\n");
+	g_string_append_printf(krn, "									for (int l = 0; l < kount_bk; l++) {\n");
+	g_string_append_printf(krn, "										if (problem->allele_1[ap][promoter_number][s - 1 - l].status != 1)\n");
+	g_string_append_printf(krn, "											problem->allele_1[ap][promoter_number][s - 1 - l].status = block;\n");
+	g_string_append_printf(krn, "									}\n");
+	g_string_append_printf(krn, "								}\n");
+	g_string_append_printf(krn, "							}\n");
+	g_string_append_printf(krn, "						}\n");
+	g_string_append_printf(krn, "					}\n");
+	g_string_append_printf(krn, "					for (i = 0; i < problem->n_target_genes; i++) {\n");
+	g_string_append_printf(krn, "						for (j = 0; j < problem->n_tfs; j++) {\n");
+	g_string_append_printf(krn, "							reaction_number = i * problem->n_tfs + j;\n");
+	g_string_append_printf(krn, "							propensity_fast[ap][reaction_number] = probability_fast[ap][reaction_number] = 0;\n");
+	g_string_append_printf(krn, "							reaction_number = problem->n_tfs * problem->n_target_genes + i * problem->n_tfs + j;\n");
+	g_string_append_printf(krn, "							propensity_fast[ap][reaction_number] = probability_fast[ap][reaction_number] = 0;\n");
+	g_string_append_printf(krn, "							reaction_number = 2 * problem->n_tfs * problem->n_target_genes + i * problem->n_tfs + j;\n");
+	g_string_append_printf(krn, "							propensity_fast[ap][reaction_number] = probability_fast[ap][reaction_number] = 0;\n");
+	g_string_append_printf(krn, "							reaction_number = 3 * problem->n_tfs * problem->n_target_genes + i * problem->n_tfs + j;\n");
+	g_string_append_printf(krn, "							propensity_fast[ap][reaction_number] = probability_fast[ap][reaction_number] = 0;\n");
+	g_string_append_printf(krn, "						}\n");
+	g_string_append_printf(krn, "					}\n");
+	g_string_append_printf(krn, "					t_fast += tau_fast;\n");
+	g_string_append_printf(krn, "					inner_iter_kounter++;\n");
+	g_string_append_printf(krn, "					if (t_fast > t_stop_fast) break;\n");
+	g_string_append_printf(krn, "				}\n");
+	g_string_append_printf(krn, "			}\n");
+/* end of parallel region */
+
+
+
+	g_string_append_printf(krn, "}\n");
+
+	cl_kernel knl = kernel_from_string(ctx, krn->str, "mssa_reaction_fast", NULL);
+
+/* Set simulation time */
+	t_start_slow = tc->t_start;
+	t_stop_slow = tc->t_end;
+/* Simulate */
+	int iter_kounter = 0;
+	t_slow = t_start_slow;
+	while (t_slow < t_stop_slow) {
+		int reaction_number_slow, inner_iter_kounter = 0;
+		int reaction_type_slow, promoter_number_slow;
+		int nuc_number_slow;
+		if (slow_only == 0) { /* interphase */
+			for (int ap = 0; ap < tc->n_nucs; ap++) {
+				for (int l = 0; l < (int)(problem->sum_sites * fast_steps_frac); l++) {
+					random_table[ap][l][0] = g_rand_double (grand);
+					random_table[ap][l][1] = g_rand_double (grand);
+					for (int i = 2; i < 4 * problem->n_target_genes; i++) {
+						random_table[ap][l][i] = g_rand_double (grand);
+					}
+				}
+			}
+#pragma omp parallel for schedule(static) default(none) shared(problem, tc, propensity_fast, probability_fast, site_tab_bind_0, site_tab_bind_1, site_tab_unbind_0, site_tab_unbind_1,fast_time_max, fast_steps_frac, verbose, random_table) reduction(+:inner_iter_kounter)
+
+			SET_4_KERNEL_ARGS(knl, buf_a, buf_b, buf_c, n);
+			size_t ldim[] = { 32 };
+			size_t gdim[] = { ((n + ldim[0] - 1)/ldim[0])*ldim[0] };
+			CALL_CL_GUARDED(clEnqueueNDRangeKernel,
+				(queue, knl,
+				 /*dimensions*/ 1, NULL, gdim, ldim,
+				 0, NULL, NULL));
+
+			CALL_CL_GUARDED(clFinish, (queue));
+
+		}
+		reaction_number_slow = mssa_get_reaction_slow_with_transport (tc->solution_mrna,
+		                                                              tc->solution_protein,
+		                                                              problem->allele_0,
+		                                                              problem->allele_1,
+		                                                              &tau_slow,
+		                                                              &reaction_type_slow,
+		                                                              &promoter_number_slow,
+		                                                              &nuc_number_slow,
+		                                                              problem->target_gene_index,
+		                                                              problem->n_sites,
+		                                                              propensity,
+		                                                              probability,
+		                                                              number_of_reactions_per_nuc,
+		                                                              number_of_reactions,
+		                                                              problem->parameters->T,
+		                                                              problem->parameters->protein_degradation,
+		                                                              problem->parameters->mrna_degradation,
+		                                                              problem->parameters->translation,
+		                                                              problem->parameters->transport_mrna,
+		                                                              problem->parameters->transport_protein,
+		                                                              problem->n_tfs,
+		                                                              problem->n_target_genes,
+		                                                              tc->n_nucs,
+		                                                              1 - slow_only);
+		iter_kounter++;
+		t_slow += tau_slow;
+/* Print the configuration of reg region to the log file */
+		if (log_file != NULL && g_strcmp0 (log_file, "nolog")) {
+			FILE*fp = fopen(log_file, "a");
+			fprintf(fp, "%d %d slow %d %f %f %d %d %d %d", problem->repeat, tc->kounter, iter_kounter, t_slow, tau_slow, reaction_number_slow, nuc_number_slow, promoter_number_slow, reaction_type_slow);
+			if (slow_only == 0) {
+				fprintf(fp, " fast %d allele_0", inner_iter_kounter);
+				for (int ap = 0; ap < tc->n_nucs; ap++) {
+					for(int i = 0; i < problem->n_target_genes; i++) {
+						for(int j = 0; j < problem->n_sites[i]; j++) {
+							fprintf(fp, " %d", problem->allele_0[ap][i][j].status);
+						}
+					}
+				}
+				fprintf(fp, " allele_1");
+				for (int ap = 0; ap < tc->n_nucs; ap++) {
+					for(int i = 0; i < problem->n_target_genes; i++) {
+						for(int j = 0; j < problem->n_sites[i]; j++) {
+							fprintf(fp, " %d", problem->allele_1[ap][i][j].status);
+						}
+					}
+				}
+			}
+			fprintf(fp, "\n");
+			fclose (fp);
+		} else if (log_file == NULL) {
+/* if log file is not given print log to the screen */
+			fprintf(stderr, "%d %d slow %d %f %f %d %d %d %d", problem->repeat, tc->kounter, iter_kounter, t_slow, tau_slow, reaction_number_slow, nuc_number_slow, promoter_number_slow, reaction_type_slow);
+			if (slow_only == 0) {
+				fprintf(stderr, " fast %d", inner_iter_kounter);
+			}
+			fprintf(stderr, "\n");
+		}
+	} /* end of slow loop */
+	for (int ap = 0; ap < tc->n_nucs; ap++) {
+		g_free (propensity_fast[ap]);
+		g_free (probability_fast[ap]);
+		for (int i = 0; i < problem->n_target_genes; i++) {
+			g_free(site_tab_bind_0[ap][i]);
+			g_free(site_tab_bind_1[ap][i]);
+			g_free(site_tab_unbind_0[ap][i]);
+			g_free(site_tab_unbind_1[ap][i]);
+		}
+		g_free(site_tab_bind_0[ap]);
+		g_free(site_tab_bind_1[ap]);
+		g_free(site_tab_unbind_0[ap]);
+		g_free(site_tab_unbind_1[ap]);
+		for (int l = 0; l < (int)(problem->sum_sites * fast_steps_frac); l++) {
+			g_free(random_table[ap][l]);
+		}
+		g_free(random_table[ap]);
+	}
+	g_free(propensity_fast);
+	g_free(probability_fast);
+	g_free(propensity);
+	g_free(probability);
+	g_free(site_tab_bind_0);
+	g_free(site_tab_bind_1);
+	g_free(site_tab_unbind_0);
+	g_free(site_tab_unbind_1);
+	g_free(random_table);
+/*
+ * clean up
+*/
+
+	CALL_CL_GUARDED(clReleaseMemObject, (buf_a));
+	CALL_CL_GUARDED(clReleaseMemObject, (buf_b));
+	CALL_CL_GUARDED(clReleaseMemObject, (buf_c));
+	CALL_CL_GUARDED(clReleaseKernel, (knl));
+	CALL_CL_GUARDED(clReleaseCommandQueue, (queue));
+	CALL_CL_GUARDED(clReleaseContext, (ctx));
+
+	if (verbose) mssa_print_timeclass (tc, problem);
+}
+
+#endif
 
 /* External inputs
  * are added
