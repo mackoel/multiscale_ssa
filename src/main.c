@@ -3858,7 +3858,7 @@ void setup_device (MSSA_Problem *problem)
 	g_string_append_printf(krn, "	__local double probability_fast[%d];\n", problem->number_of_reactions_fast_per_nuc * problem->n_nucs);
 	g_string_append_printf(krn, "	__local int site_tab[%d];\n", problem->number_of_reactions_fast_per_nuc * problem->n_nucs);
 	g_string_append_printf(krn, "	double tau_slow, t_slow;\n");
-	g_string_append_printf(krn, "	int seed = seed_rng + nuc_id;\n");
+	g_string_append_printf(krn, "	int seed = seed_rng + rep_id * n_nucs + nuc_id;\n");
 	g_string_append_printf(krn, "	int ap, reaction_number, found, rep;\n");
   	g_string_append_printf(krn, "	t_slow = t_start_slow;\n");
   	g_string_append_printf(krn, "	double random;\n");
@@ -4363,7 +4363,10 @@ void setup_device (MSSA_Problem *problem)
 	g_string_append_printf(krn, "	}\n");
 
 	g_string_append_printf(krn, "	barrier(CLK_LOCAL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE);\n");
-
+	g_string_append_printf(krn, "	if (nuc_size %% 2) {\n");
+	g_string_append_printf(krn, "		prop_sum_loc[0] += prop_sum_loc[nuc_size - 1];\n");
+	g_string_append_printf(krn, "		barrier(CLK_LOCAL_MEM_FENCE);\n");
+	g_string_append_printf(krn, "	}\n");
 // Loop for computing localSums : divide WorkGroup into 2 parts
 	g_string_append_printf(krn, "	for (uint stride = nuc_size/2; stride > 0; stride /= 2) {\n");
 // Waiting for each 2x2 addition into given workgroup
@@ -4371,6 +4374,7 @@ void setup_device (MSSA_Problem *problem)
 // Add elements 2 by 2 between local_id and local_id + stride
 	g_string_append_printf(krn, "		if (nuc_id < stride) prop_sum_loc[nuc_id] += prop_sum_loc[nuc_id + stride];\n");
 	g_string_append_printf(krn, "	}\n");
+	g_string_append_printf(krn, "	barrier(CLK_LOCAL_MEM_FENCE);\n");
 	g_string_append_printf(krn, "	prop_sum_all = prop_sum_loc[0];\n");
 
 	g_string_append_printf(krn, "	if (prop_sum_all <= 0.00000000001) {\n");
