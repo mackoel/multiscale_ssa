@@ -3105,7 +3105,7 @@ void setup_device (MSSA_Problem *problem)
 */
 	create_context_on(CHOOSE_INTERACTIVELY, CHOOSE_INTERACTIVELY, 0, &ctx, &queue, 0);
 	print_device_info_from_queue(queue);
-	CHECK_CL_ERROR(status, "clCreateBuffer");
+
 	solution_protein = clCreateBuffer(ctx, CL_MEM_READ_WRITE,
 	  sizeof(double) * problem->n_nucs * problem->n_tfs * problem->repeats, 0, &status);
 	CHECK_CL_ERROR(status, "clCreateBuffer");
@@ -3118,50 +3118,70 @@ void setup_device (MSSA_Problem *problem)
 
 	T = clCreateBuffer(ctx, CL_MEM_READ_WRITE,
 	  sizeof(double) * problem->n_tfs * problem->n_target_genes, 0, &status);
+	CHECK_CL_ERROR(status, "clCreateBuffer");
 	translation = clCreateBuffer(ctx, CL_MEM_READ_WRITE,
 	  sizeof(double) * problem->n_target_genes, 0, &status);
+	CHECK_CL_ERROR(status, "clCreateBuffer");
 	transport_mrna = clCreateBuffer(ctx, CL_MEM_READ_WRITE,
 	  sizeof(double) * problem->n_target_genes, 0, &status);
+	CHECK_CL_ERROR(status, "clCreateBuffer");
 	transport_protein = clCreateBuffer(ctx, CL_MEM_READ_WRITE,
 	  sizeof(double) * problem->n_target_genes, 0, &status);
+	CHECK_CL_ERROR(status, "clCreateBuffer");
 	protein_degradation = clCreateBuffer(ctx, CL_MEM_READ_WRITE,
 	  sizeof(double) * problem->n_target_genes, 0, &status);
+	CHECK_CL_ERROR(status, "clCreateBuffer");
 	mrna_degradation = clCreateBuffer(ctx, CL_MEM_READ_WRITE,
 	  sizeof(double) * problem->n_target_genes, 0, &status);
 
 	n_sites = clCreateBuffer(ctx, CL_MEM_READ_WRITE,
 	  sizeof(int) * problem->n_target_genes, 0, &status);
+	CHECK_CL_ERROR(status, "clCreateBuffer");
 	m_sites = clCreateBuffer(ctx, CL_MEM_READ_WRITE,
 	  sizeof(int) * problem->n_target_genes, 0, &status);
+	CHECK_CL_ERROR(status, "clCreateBuffer");
 	target_gene_index = clCreateBuffer(ctx, CL_MEM_READ_WRITE,
 	  sizeof(int) * problem->n_target_genes, 0, &status);
 
 	tf_index_allele_0 = clCreateBuffer(ctx, CL_MEM_READ_WRITE,
 	  sizeof(int) * problem->sum_sites, 0, &status);
+	CHECK_CL_ERROR(status, "clCreateBuffer");
 	tf_index_allele_1 = clCreateBuffer(ctx, CL_MEM_READ_WRITE,
 	  sizeof(int) * problem->sum_sites, 0, &status);
+	CHECK_CL_ERROR(status, "clCreateBuffer");
 	status_allele_0 = clCreateBuffer(ctx, CL_MEM_READ_WRITE,
 	  sizeof(int) * problem->sum_sites * problem->n_nucs * problem->repeats, 0, &status);
+	CHECK_CL_ERROR(status, "clCreateBuffer");
 	status_allele_1 = clCreateBuffer(ctx, CL_MEM_READ_WRITE,
 	  sizeof(int) * problem->sum_sites * problem->n_nucs * problem->repeats, 0, &status);
+	CHECK_CL_ERROR(status, "clCreateBuffer");
 	energy_allele_0 = clCreateBuffer(ctx, CL_MEM_READ_WRITE,
 	  sizeof(double) * problem->sum_sites, 0, &status);
+	CHECK_CL_ERROR(status, "clCreateBuffer");
 	energy_allele_1 = clCreateBuffer(ctx, CL_MEM_READ_WRITE,
 	  sizeof(double) * problem->sum_sites, 0, &status);
+	CHECK_CL_ERROR(status, "clCreateBuffer");
 	blocked_fw_allele_0 = clCreateBuffer(ctx, CL_MEM_READ_WRITE,
 	  sizeof(int) * problem->sum_sites, 0, &status);
+	CHECK_CL_ERROR(status, "clCreateBuffer");
 	blocked_fw_allele_1 = clCreateBuffer(ctx, CL_MEM_READ_WRITE,
 	  sizeof(int) * problem->sum_sites, 0, &status);
+	CHECK_CL_ERROR(status, "clCreateBuffer");
 	repressed_fw_allele_0 = clCreateBuffer(ctx, CL_MEM_READ_WRITE,
 	  sizeof(int) * problem->sum_sites, 0, &status);
+	CHECK_CL_ERROR(status, "clCreateBuffer");
 	repressed_fw_allele_1 = clCreateBuffer(ctx, CL_MEM_READ_WRITE,
 	  sizeof(int) * problem->sum_sites, 0, &status);
+	CHECK_CL_ERROR(status, "clCreateBuffer");
 	blocked_bk_allele_0 = clCreateBuffer(ctx, CL_MEM_READ_WRITE,
 	  sizeof(int) * problem->sum_sites, 0, &status);
+	CHECK_CL_ERROR(status, "clCreateBuffer");
 	blocked_bk_allele_1 = clCreateBuffer(ctx, CL_MEM_READ_WRITE,
 	  sizeof(int) * problem->sum_sites, 0, &status);
+	CHECK_CL_ERROR(status, "clCreateBuffer");
 	repressed_bk_allele_0 = clCreateBuffer(ctx, CL_MEM_READ_WRITE,
 	  sizeof(int) * problem->sum_sites, 0, &status);
+	CHECK_CL_ERROR(status, "clCreateBuffer");
 	repressed_bk_allele_1 = clCreateBuffer(ctx, CL_MEM_READ_WRITE,
 	  sizeof(int) * problem->sum_sites, 0, &status);
 /*
@@ -3309,7 +3329,7 @@ void setup_device (MSSA_Problem *problem)
 	g_string_append_printf(krn, "{\n");
 	g_string_append_printf(krn, "	__local double propensity_fast[%d];\n", problem->number_of_reactions_fast_per_nuc * problem->n_nucs);
 	g_string_append_printf(krn, "	__local double probability_fast[%d];\n", problem->number_of_reactions_fast_per_nuc * problem->n_nucs);
-	g_string_append_printf(krn, "	__local double site_tab[%d];\n", problem->number_of_reactions_fast_per_nuc * problem->n_nucs);
+	g_string_append_printf(krn, "	__local int site_tab[%d];\n", problem->number_of_reactions_fast_per_nuc * problem->n_nucs);
 /*
   	g_string_append_printf(krn, "			int gid = get_global_id(0);\n");
   	g_string_append_printf(krn, "			int gsize = get_global_size(0);\n");
@@ -3836,7 +3856,7 @@ void setup_device (MSSA_Problem *problem)
 	g_string_append_printf(krn, "	__local double probability[%d];\n", problem->number_of_reactions_per_nuc * problem->n_nucs);
 	g_string_append_printf(krn, "	__local double propensity_fast[%d];\n", problem->number_of_reactions_fast_per_nuc * problem->n_nucs);
 	g_string_append_printf(krn, "	__local double probability_fast[%d];\n", problem->number_of_reactions_fast_per_nuc * problem->n_nucs);
-	g_string_append_printf(krn, "	__local double site_tab[%d];\n", problem->number_of_reactions_fast_per_nuc * problem->n_nucs);
+	g_string_append_printf(krn, "	__local int site_tab[%d];\n", problem->number_of_reactions_fast_per_nuc * problem->n_nucs);
 	g_string_append_printf(krn, "	double tau_slow, t_slow;\n");
 	g_string_append_printf(krn, "	int seed = seed_rng + nuc_id;\n");
 	g_string_append_printf(krn, "	int ap, reaction_number, found, rep;\n");
@@ -4867,6 +4887,7 @@ void propagate_with_transport_3 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 					m_sites, \
 					T, \
 					n_nucs)
+
 	for (int rep = 0; rep < problem->repeats; rep++) {
 		int iter_kounter = 0;
 		double t_slow, tau_slow;
@@ -4876,17 +4897,28 @@ void propagate_with_transport_3 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 			int reaction_type_slow, promoter_number_slow;
 			int nuc_number_slow;
 			if (interphase == 1) { /* interphase */
+#pragma omp critical
+{
 	/*
 	 transfer to device
 	*/
 				CALL_CL_GUARDED(clEnqueueWriteBuffer, (
 					queue, solution_protein, /*blocking*/ CL_TRUE, /*offset*/ rep * tc->n_nucs * problem->n_tfs * sizeof(double),
-					(rep + 1) * tc->n_nucs * problem->n_tfs * sizeof(double), tc->solution_protein,
+					tc->n_nucs * problem->n_tfs * sizeof(double), &(tc->solution_protein[rep * tc->n_nucs * problem->n_tfs]),
 					0, NULL, NULL));
 				CALL_CL_GUARDED(clEnqueueWriteBuffer, (
 					queue, bound_protein, /*blocking*/ CL_TRUE, /*offset*/ rep * tc->n_nucs * problem->n_tfs * sizeof(double),
-					(rep + 1) * tc->n_nucs * problem->n_tfs * sizeof(double), tc->bound_protein,
+					tc->n_nucs * problem->n_tfs * sizeof(double), &(tc->bound_protein[rep * tc->n_nucs * problem->n_tfs]),
 					0, NULL, NULL));
+//				CALL_CL_GUARDED(clEnqueueWriteBuffer, (
+//					queue, solution_protein, /*blocking*/ CL_TRUE, /*offset*/ 0,
+//					problem->repeats * tc->n_nucs * problem->n_tfs * sizeof(double), tc->solution_protein,
+//					0, NULL, NULL));
+//				CALL_CL_GUARDED(clEnqueueWriteBuffer, (
+//					queue, bound_protein, /*blocking*/ CL_TRUE, /*offset*/ 0,
+//					problem->repeats * tc->n_nucs * problem->n_tfs * sizeof(double), tc->bound_protein,
+//					0, NULL, NULL));
+
 	/*
 	 run code on device
 	*/
@@ -4936,21 +4968,42 @@ void propagate_with_transport_3 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 	*/
 				CALL_CL_GUARDED(clEnqueueReadBuffer, (
 					queue, solution_protein, /*blocking*/ CL_TRUE, /*offset*/ rep * tc->n_nucs * problem->n_tfs * sizeof(double),
-					(rep + 1) * tc->n_nucs * problem->n_tfs * sizeof(double), tc->solution_protein,
+					tc->n_nucs * problem->n_tfs * sizeof(double), &(tc->solution_protein[rep * tc->n_nucs * problem->n_tfs]),
 					0, NULL, NULL));
 				CALL_CL_GUARDED(clEnqueueReadBuffer, (
 					queue, bound_protein, /*blocking*/ CL_TRUE, /*offset*/ rep * tc->n_nucs * problem->n_tfs * sizeof(double),
-					(rep + 1) * tc->n_nucs * problem->n_tfs * sizeof(double), tc->bound_protein,
+					tc->n_nucs * problem->n_tfs * sizeof(double), &(tc->bound_protein[rep * tc->n_nucs * problem->n_tfs]),
 					0, NULL, NULL));
 				CALL_CL_GUARDED(clEnqueueReadBuffer, (
-					queue, status_allele_1, /*blocking*/ CL_TRUE, /*offset*/ rep * tc->n_nucs * problem->n_tfs * sizeof(double),
-					(rep + 1) * tc->n_nucs * problem->n_tfs * sizeof(int), problem->status_allele_1,
+					queue, status_allele_1, /*blocking*/ CL_TRUE, /*offset*/ rep * tc->n_nucs * problem->sum_sites * sizeof(int),
+					tc->n_nucs * problem->sum_sites * sizeof(int), &(problem->status_allele_1[rep * tc->n_nucs * problem->sum_sites]),
 					0, NULL, NULL));
 				CALL_CL_GUARDED(clEnqueueReadBuffer, (
-					queue, status_allele_0, /*blocking*/ CL_TRUE, /*offset*/ rep * tc->n_nucs * problem->n_tfs * sizeof(double),
-					(rep + 1) * tc->n_nucs * problem->n_tfs * sizeof(int), problem->status_allele_0,
+					queue, status_allele_0, /*blocking*/ CL_TRUE, /*offset*/ rep * tc->n_nucs * problem->sum_sites * sizeof(int),
+					tc->n_nucs * problem->sum_sites * sizeof(int), &(problem->status_allele_0[rep * tc->n_nucs * problem->sum_sites]),
 					0, NULL, NULL));
 				CALL_CL_GUARDED(clFinish, (queue));
+
+//				CALL_CL_GUARDED(clEnqueueReadBuffer, (
+//					queue, solution_protein, /*blocking*/ CL_TRUE, /*offset*/ 0,
+//					problem->repeats * tc->n_nucs * problem->n_tfs * sizeof(double), tc->solution_protein,
+//					0, NULL, NULL));
+//				CALL_CL_GUARDED(clEnqueueReadBuffer, (
+//					queue, bound_protein, /*blocking*/ CL_TRUE, /*offset*/ 0,
+//					problem->repeats * tc->n_nucs * problem->n_tfs * sizeof(double), tc->bound_protein,
+//					0, NULL, NULL));
+//				CALL_CL_GUARDED(clEnqueueReadBuffer, (
+//					queue, status_allele_1, /*blocking*/ CL_TRUE, /*offset*/ 0,
+//					problem->repeats * tc->n_nucs * problem->sum_sites * sizeof(int), problem->status_allele_1,
+//					0, NULL, NULL));
+//				CALL_CL_GUARDED(clEnqueueReadBuffer, (
+//					queue, status_allele_0, /*blocking*/ CL_TRUE, /*offset*/ 0,
+//					problem->repeats * tc->n_nucs * problem->sum_sites * sizeof(int), problem->status_allele_0,
+//					0, NULL, NULL));
+//				CALL_CL_GUARDED(clFinish, (queue));
+
+
+}
 			}
 			int reaction_index; /* local reaction type */
 			int reaction_target; /* local reaction target */
@@ -6776,21 +6829,21 @@ void divide (MSSA_Timeclass *tc, MSSA_Problem *problem)
 		for (int l = 0; l < problem->repeats; l++) {
 			int i = 0;
 			for (int j = 0; j < problem->n_tfs; j++) {
-				tc->solution_mrna[l * tc->n_nucs * problem->n_tfs + 2 * i * problem->n_tfs + j] = tc_prev->solution_mrna[l * tc->n_nucs * problem->n_tfs + i * problem->n_tfs + j] / 2;
-				tc->solution_protein[l * tc->n_nucs * problem->n_tfs + 2 * i * problem->n_tfs + j] = tc_prev->solution_protein[l * tc->n_nucs * problem->n_tfs + i * problem->n_tfs + j] / 2;
+				tc->solution_mrna[l * tc->n_nucs * problem->n_tfs + 2 * i * problem->n_tfs + j] = tc_prev->solution_mrna[l * tc_prev->n_nucs * problem->n_tfs + i * problem->n_tfs + j] / 2;
+				tc->solution_protein[l * tc->n_nucs * problem->n_tfs + 2 * i * problem->n_tfs + j] = tc_prev->solution_protein[l * tc_prev->n_nucs * problem->n_tfs + i * problem->n_tfs + j] / 2;
 			}
 			for (int i = 1; i < tc_prev->n_nucs - 1; i++) {
 				for (int j = 0; j < problem->n_tfs; j++) {
-					tc->solution_mrna[l * tc->n_nucs * problem->n_tfs + 2 * i * problem->n_tfs + j] = tc_prev->solution_mrna[l * tc->n_nucs * problem->n_tfs + i * problem->n_tfs + j] / 2;
-					tc->solution_mrna[l * tc->n_nucs * problem->n_tfs + (2 * i + 1) * problem->n_tfs + j] = tc_prev->solution_mrna[l * tc->n_nucs * problem->n_tfs + i * problem->n_tfs + j] / 2;
-					tc->solution_protein[l * tc->n_nucs * problem->n_tfs + 2 * i * problem->n_tfs + j] = tc_prev->solution_protein[l * tc->n_nucs * problem->n_tfs + i * problem->n_tfs + j] / 2;
-					tc->solution_protein[l * tc->n_nucs * problem->n_tfs + (2 * i + 1) * problem->n_tfs + j] = tc_prev->solution_protein[l * tc->n_nucs * problem->n_tfs + i * problem->n_tfs + j] / 2;
+					tc->solution_mrna[l * tc->n_nucs * problem->n_tfs + 2 * i * problem->n_tfs + j] = tc_prev->solution_mrna[l * tc_prev->n_nucs * problem->n_tfs + i * problem->n_tfs + j] / 2;
+					tc->solution_mrna[l * tc->n_nucs * problem->n_tfs + (2 * i + 1) * problem->n_tfs + j] = tc_prev->solution_mrna[l * tc_prev->n_nucs * problem->n_tfs + i * problem->n_tfs + j] / 2;
+					tc->solution_protein[l * tc->n_nucs * problem->n_tfs + 2 * i * problem->n_tfs + j] = tc_prev->solution_protein[l * tc_prev->n_nucs * problem->n_tfs + i * problem->n_tfs + j] / 2;
+					tc->solution_protein[l * tc->n_nucs * problem->n_tfs + (2 * i + 1) * problem->n_tfs + j] = tc_prev->solution_protein[l * tc_prev->n_nucs * problem->n_tfs + i * problem->n_tfs + j] / 2;
 				}
 			}
 			i = tc_prev->n_nucs - 1;
 			for (int j = 0; j < problem->n_tfs; j++) {
-				tc->solution_mrna[l * tc->n_nucs * problem->n_tfs + (2 * i + 1) * problem->n_tfs + j] = tc_prev->solution_mrna[l * tc->n_nucs * problem->n_tfs + i * problem->n_tfs + j] / 2;
-				tc->solution_protein[l * tc->n_nucs * problem->n_tfs + (2 * i + 1) * problem->n_tfs + j] = tc_prev->solution_protein[l * tc->n_nucs * problem->n_tfs + i * problem->n_tfs + j] / 2;
+				tc->solution_mrna[l * tc->n_nucs * problem->n_tfs + (2 * i + 1) * problem->n_tfs + j] = tc_prev->solution_mrna[l * tc_prev->n_nucs * problem->n_tfs + i * problem->n_tfs + j] / 2;
+				tc->solution_protein[l * tc->n_nucs * problem->n_tfs + (2 * i + 1) * problem->n_tfs + j] = tc_prev->solution_protein[l * tc_prev->n_nucs * problem->n_tfs + i * problem->n_tfs + j] / 2;
 			}
 		}
 	} else {
@@ -6798,10 +6851,10 @@ void divide (MSSA_Timeclass *tc, MSSA_Problem *problem)
 		for (int l = 0; l < problem->repeats; l++) {
 			for (int i = 0; i < tc_prev->n_nucs; i++) {
 				for (int j = 0; j < problem->n_tfs; j++) {
-					tc->solution_mrna[l * tc->n_nucs * problem->n_tfs + 2 * i * problem->n_tfs + j] = tc_prev->solution_mrna[l * tc->n_nucs * problem->n_tfs + i * problem->n_tfs + j] / 2;
-					tc->solution_mrna[l * tc->n_nucs * problem->n_tfs + (2 * i + 1) * problem->n_tfs + j] = tc_prev->solution_mrna[l * tc->n_nucs * problem->n_tfs + i * problem->n_tfs + j] / 2;
-					tc->solution_protein[l * tc->n_nucs * problem->n_tfs + 2 * i * problem->n_tfs + j] = tc_prev->solution_protein[l * tc->n_nucs * problem->n_tfs + i * problem->n_tfs + j] / 2;
-					tc->solution_protein[l * tc->n_nucs * problem->n_tfs + (2 * i + 1) * problem->n_tfs + j] = tc_prev->solution_protein[l * tc->n_nucs * problem->n_tfs + i * problem->n_tfs + j] / 2;
+					tc->solution_mrna[l * tc->n_nucs * problem->n_tfs + 2 * i * problem->n_tfs + j] = tc_prev->solution_mrna[l * tc_prev->n_nucs * problem->n_tfs + i * problem->n_tfs + j] / 2;
+					tc->solution_mrna[l * tc->n_nucs * problem->n_tfs + (2 * i + 1) * problem->n_tfs + j] = tc_prev->solution_mrna[l * tc_prev->n_nucs * problem->n_tfs + i * problem->n_tfs + j] / 2;
+					tc->solution_protein[l * tc->n_nucs * problem->n_tfs + 2 * i * problem->n_tfs + j] = tc_prev->solution_protein[l * tc_prev->n_nucs * problem->n_tfs + i * problem->n_tfs + j] / 2;
+					tc->solution_protein[l * tc->n_nucs * problem->n_tfs + (2 * i + 1) * problem->n_tfs + j] = tc_prev->solution_protein[l * tc_prev->n_nucs * problem->n_tfs + i * problem->n_tfs + j] / 2;
 				}
 			}
 		}
