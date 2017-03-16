@@ -370,6 +370,82 @@ void create_context_on(const char *plat_name, const char*dev_name, cl_uint idx,
 }
 
 
+void create_context_on_gpu(cl_uint idx,
+    cl_context *ctx, cl_command_queue *queue, int enable_profiling)
+{
+  char dev_sel_buf[MAX_NAME_LEN];
+  char platform_sel_buf[MAX_NAME_LEN];
+
+  // get number of platforms
+  cl_uint plat_count;
+  CALL_CL_GUARDED(clGetPlatformIDs, (0, NULL, &plat_count));
+
+  // allocate memory, get list of platform handles
+  cl_platform_id *platforms =
+    (cl_platform_id *) malloc(plat_count*sizeof(cl_platform_id));
+  CHECK_SYS_ERROR(!platforms, "allocating platform array");
+  CALL_CL_GUARDED(clGetPlatformIDs, (plat_count, platforms, NULL));
+
+  // iterate over platforms
+  for (cl_uint i = 0; i < plat_count; ++i)
+  {
+    // get platform name
+    char buf[MAX_NAME_LEN];
+    CALL_CL_GUARDED(clGetPlatformInfo, (platforms[i], CL_PLATFORM_VENDOR,
+          sizeof(buf), buf, NULL));
+
+    // get number of devices in platform
+    cl_uint dev_count;
+    cl_int status;
+    status = clGetDeviceIDs(platforms[i], CL_DEVICE_TYPE_GPU | CL_DEVICE_TYPE_ACCELERATOR,
+          0, NULL, &dev_count);
+    if (status != CL_SUCCESS)
+    {
+      continue;
+    }
+    // allocate memory, get list of device handles in platform
+    cl_device_id *devices =
+      (cl_device_id *) malloc(dev_count*sizeof(cl_device_id));
+    CHECK_SYS_ERROR(!devices, "allocating device array");
+
+    CALL_CL_GUARDED(clGetDeviceIDs, (platforms[i], CL_DEVICE_TYPE_GPU | CL_DEVICE_TYPE_ACCELERATOR,
+          dev_count, devices, NULL));
+
+    int int_sel = MIN(MAX(0, idx), (int) dev_count-1);
+
+    CALL_CL_GUARDED(clGetDeviceInfo, (devices[int_sel], CL_DEVICE_NAME,
+          sizeof(dev_sel_buf), dev_sel_buf, NULL));
+//    dev_name = dev_sel_buf;
+    cl_platform_id plat = platforms[i];
+    cl_device_id dev = devices[int_sel];
+
+    free(devices);
+    free(platforms);
+
+    // create a context
+    cl_context_properties cps[3] = {
+      CL_CONTEXT_PLATFORM, (cl_context_properties) plat, 0 };
+
+    *ctx = clCreateContext(
+        cps, 1, &dev, NULL, NULL, &status);
+    CHECK_CL_ERROR(status, "clCreateContext");
+
+    // create a command queue
+    cl_command_queue_properties qprops = 0;
+    if (enable_profiling)
+      qprops |= CL_QUEUE_PROFILING_ENABLE;
+
+    if (queue)
+    {
+      *queue = clCreateCommandQueue(*ctx, dev, qprops, &status);
+      CHECK_CL_ERROR(status, "clCreateCommandQueue");
+        return;
+    }
+  }
+  fputs("create_context_on_gpu: specified device not found.\n", stderr);
+  abort();
+}
+
 
 
 char *read_file(const char *filename)
@@ -536,7 +612,7 @@ void print_device_info(cl_device_id device)
 
 
   printf("---------------------------------------------------------------------\n");
-  
+
 
   static struct { cl_device_info param; const char *name; } longProps[] = {
 #define defn(X) { CL_DEVICE_##X, #X }
