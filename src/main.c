@@ -310,8 +310,13 @@ MSSA_Problem *mssa_read_problem(gchar*filename)
 		problem->sum_sites += problem->n_sites[i];
 	}
 	fscanf(fp, "%*s");
+/*
 	problem->allele_0 = g_new0(MSSA_site**, problem->n_nucs);
 	problem->allele_1 = g_new0(MSSA_site**, problem->n_nucs);
+*/
+	problem->allele_0 = g_new0(MSSA_site**, 1);
+	problem->allele_1 = g_new0(MSSA_site**, 1);
+
 	problem->allele_0[0] = g_new0(MSSA_site*, problem->n_target_genes);
 	problem->allele_1[0] = g_new0(MSSA_site*, problem->n_target_genes);
 	for (int i = 0; i < problem->n_target_genes; i++) {
@@ -326,6 +331,7 @@ MSSA_Problem *mssa_read_problem(gchar*filename)
 		}
 		fscanf(fp, "%*s");
 	}
+/*
 	for(int k = 1; k < problem->n_nucs; k++) {
 		problem->allele_0[k] = g_new0(MSSA_site*, problem->n_target_genes);
 		problem->allele_1[k] = g_new0(MSSA_site*, problem->n_target_genes);
@@ -338,6 +344,7 @@ MSSA_Problem *mssa_read_problem(gchar*filename)
 			}
 		}
 	}
+*/
 	problem->parameters = g_new(MSSA_Parameters, 1);
 	problem->parameters->T = g_new0(double, problem->n_target_genes * problem->n_tfs);
 	problem->parameters->protein_degradation = g_new0(double, problem->n_target_genes);
@@ -3848,7 +3855,7 @@ void setup_device (MSSA_Problem *problem)
 	g_string_append_printf(krn, "	__local double prop_sum_loc[%d];\n", problem->cl_group_size); /* should be group size */
 	g_string_append_printf(krn, "	__local double tau_slow_loc[%d];\n", problem->cl_group_size); /* should be group size */
 	g_string_append_printf(krn, "	double tau_slow, t_slow;\n");
-	g_string_append_printf(krn, "	int seed = seed_rng/2 + rep_id * n_nucs + nuc_id;\n");
+	g_string_append_printf(krn, "	int seed = seed_rng + rep_id * n_nucs + nuc_id;\n");
   	g_string_append_printf(krn, "	t_slow = t_start_slow;\n");
   	g_string_append_printf(krn, "	double random;\n");
 	g_string_append_printf(krn, "	for (int rep = rep_id; rep < n_reps; rep += rep_size) {\n");
@@ -4493,30 +4500,30 @@ void setup_device (MSSA_Problem *problem)
 	g_string_append_printf(krn, "					int k = target_gene_index[reaction_target];\n");
 	g_string_append_printf(krn, "					switch (reaction_index) {\n");
 	g_string_append_printf(krn, "						case 1: /* transcription 1 */\n");
-	g_string_append_printf(krn, "							solution_mrna[rep * n_nucs * %d + reaction_nuc * %d + k]++;\n", problem->n_tfs, problem->n_tfs);
+	g_string_append_printf(krn, "							solution_mrna[rep * n_nucs * %d + reaction_nuc * %d + k] += 1;\n", problem->n_tfs, problem->n_tfs);
 	g_string_append_printf(krn, "						break;\n");
 	g_string_append_printf(krn, "						case 2: /* transcription 2 */\n");
-	g_string_append_printf(krn, "							solution_mrna[rep * n_nucs * %d + reaction_nuc * %d + k]++;\n", problem->n_tfs, problem->n_tfs);
+	g_string_append_printf(krn, "							solution_mrna[rep * n_nucs * %d + reaction_nuc * %d + k] += 1;\n", problem->n_tfs, problem->n_tfs);
 	g_string_append_printf(krn, "						break;\n");
 	g_string_append_printf(krn, "						case 3: /* translation */\n");
-	g_string_append_printf(krn, "							solution_protein[rep * n_nucs * %d + reaction_nuc * %d + k]++;\n", problem->n_tfs, problem->n_tfs);
+	g_string_append_printf(krn, "							solution_protein[rep * n_nucs * %d + reaction_nuc * %d + k] += 1;\n", problem->n_tfs, problem->n_tfs);
 	g_string_append_printf(krn, "						break;\n");
 	g_string_append_printf(krn, "						case 4: /* mrna degradation */\n");
-	g_string_append_printf(krn, "							solution_mrna[rep * n_nucs * %d + reaction_nuc * %d + k]--;\n", problem->n_tfs, problem->n_tfs);
+	g_string_append_printf(krn, "							solution_mrna[rep * n_nucs * %d + reaction_nuc * %d + k] -= 1;\n", problem->n_tfs, problem->n_tfs);
 	g_string_append_printf(krn, "							if (solution_mrna[rep * n_nucs * %d + reaction_nuc * %d + k] < 0) {\n", problem->n_tfs, problem->n_tfs);
 	g_string_append_printf(krn, "								solution_mrna[rep * n_nucs * %d + reaction_nuc * %d + k] = 0;\n", problem->n_tfs, problem->n_tfs);
 	g_string_append_printf(krn, "							}\n");
 	g_string_append_printf(krn, "						break;\n");
 	g_string_append_printf(krn, "						case 5: /* protein degradation */\n");
-	g_string_append_printf(krn, "							solution_protein[rep * n_nucs * %d + reaction_nuc * %d + k]--;\n", problem->n_tfs, problem->n_tfs);
+	g_string_append_printf(krn, "							solution_protein[rep * n_nucs * %d + reaction_nuc * %d + k] -= 1;\n", problem->n_tfs, problem->n_tfs);
 	g_string_append_printf(krn, "							if (solution_protein[rep * n_nucs * %d + reaction_nuc * %d + k] < 0) {\n", problem->n_tfs, problem->n_tfs);
 	g_string_append_printf(krn, "								solution_protein[rep * n_nucs * %d + reaction_nuc * %d + k] = 0;\n", problem->n_tfs, problem->n_tfs);
 	g_string_append_printf(krn, "							}\n");
 	g_string_append_printf(krn, "						break;\n");
 	g_string_append_printf(krn, "						case 6: /* left transport mrna */\n");
 	g_string_append_printf(krn, "							if ((reaction_nuc - 1) > -1) {\n");
-	g_string_append_printf(krn, "								solution_mrna[rep * n_nucs * %d + (reaction_nuc - 1) * %d + k]--;\n", problem->n_tfs, problem->n_tfs);
-	g_string_append_printf(krn, "								solution_mrna[rep * n_nucs * %d + reaction_nuc * %d + k]++;\n", problem->n_tfs, problem->n_tfs);
+	g_string_append_printf(krn, "								solution_mrna[rep * n_nucs * %d + (reaction_nuc - 1) * %d + k] -= 1;\n", problem->n_tfs, problem->n_tfs);
+	g_string_append_printf(krn, "								solution_mrna[rep * n_nucs * %d + reaction_nuc * %d + k] += 1;\n", problem->n_tfs, problem->n_tfs);
 	g_string_append_printf(krn, "								if (solution_mrna[rep * n_nucs * %d + (reaction_nuc - 1) * %d + k] < 0) {\n", problem->n_tfs, problem->n_tfs);
 	g_string_append_printf(krn, "									solution_mrna[rep * n_nucs * %d + (reaction_nuc - 1) * %d + k] = 0;\n", problem->n_tfs, problem->n_tfs);
 	g_string_append_printf(krn, "								}\n");
@@ -4524,8 +4531,8 @@ void setup_device (MSSA_Problem *problem)
 	g_string_append_printf(krn, "							break;\n");
 	g_string_append_printf(krn, "						case 7: /* right transport mrna */\n");
 	g_string_append_printf(krn, "							if ((reaction_nuc + 1) < n_nucs) {\n");
-	g_string_append_printf(krn, "								solution_mrna[rep * n_nucs * %d + (reaction_nuc + 1) * %d + k]--;\n", problem->n_tfs, problem->n_tfs);
-	g_string_append_printf(krn, "								solution_mrna[rep * n_nucs * %d + reaction_nuc * %d + k]++;\n", problem->n_tfs, problem->n_tfs);
+	g_string_append_printf(krn, "								solution_mrna[rep * n_nucs * %d + (reaction_nuc + 1) * %d + k] -= 1;\n", problem->n_tfs, problem->n_tfs);
+	g_string_append_printf(krn, "								solution_mrna[rep * n_nucs * %d + reaction_nuc * %d + k] += 1;\n", problem->n_tfs, problem->n_tfs);
 	g_string_append_printf(krn, "								if (solution_mrna[rep * n_nucs * %d + (reaction_nuc + 1) * %d + k] < 0) {\n", problem->n_tfs, problem->n_tfs);
 	g_string_append_printf(krn, "									solution_mrna[rep * n_nucs * %d + (reaction_nuc + 1) * %d + k] = 0;\n", problem->n_tfs, problem->n_tfs);
 	g_string_append_printf(krn, "								}\n");
@@ -4533,8 +4540,8 @@ void setup_device (MSSA_Problem *problem)
 	g_string_append_printf(krn, "						break;\n");
 	g_string_append_printf(krn, "						case 8: /* left transport protein */\n");
 	g_string_append_printf(krn, "							if ((reaction_nuc - 1) > -1) {\n");
-	g_string_append_printf(krn, "								solution_protein[rep * n_nucs * %d + (reaction_nuc - 1) * %d + k]--;\n", problem->n_tfs, problem->n_tfs);
-	g_string_append_printf(krn, "								solution_protein[rep * n_nucs * %d + reaction_nuc * %d + k]++;\n", problem->n_tfs, problem->n_tfs);
+	g_string_append_printf(krn, "								solution_protein[rep * n_nucs * %d + (reaction_nuc - 1) * %d + k] -= 1;\n", problem->n_tfs, problem->n_tfs);
+	g_string_append_printf(krn, "								solution_protein[rep * n_nucs * %d + reaction_nuc * %d + k] += 1;\n", problem->n_tfs, problem->n_tfs);
 	g_string_append_printf(krn, "								if (solution_protein[rep * n_nucs * %d + (reaction_nuc - 1) * %d + k] < 0) {\n", problem->n_tfs, problem->n_tfs);
 	g_string_append_printf(krn, "									solution_protein[rep * n_nucs * %d + (reaction_nuc - 1) * %d + k] = 0;\n", problem->n_tfs, problem->n_tfs);
 	g_string_append_printf(krn, "								}\n");
@@ -4542,8 +4549,8 @@ void setup_device (MSSA_Problem *problem)
 	g_string_append_printf(krn, "						break;\n");
 	g_string_append_printf(krn, "						case 9: /* right transport protein */\n");
 	g_string_append_printf(krn, "							if ((reaction_nuc + 1) < n_nucs) {\n");
-	g_string_append_printf(krn, "								solution_protein[rep * n_nucs * %d + (reaction_nuc + 1) * %d + k]--;\n", problem->n_tfs, problem->n_tfs);
-	g_string_append_printf(krn, "								solution_protein[rep * n_nucs * %d + reaction_nuc * %d + k]++;\n", problem->n_tfs, problem->n_tfs);
+	g_string_append_printf(krn, "								solution_protein[rep * n_nucs * %d + (reaction_nuc + 1) * %d + k] -= 1;\n", problem->n_tfs, problem->n_tfs);
+	g_string_append_printf(krn, "								solution_protein[rep * n_nucs * %d + reaction_nuc * %d + k] += 1;\n", problem->n_tfs, problem->n_tfs);
 	g_string_append_printf(krn, "								if (solution_protein[rep * n_nucs * %d + (reaction_nuc + 1) * %d + k] < 0) {\n", problem->n_tfs, problem->n_tfs);
 	g_string_append_printf(krn, "									solution_protein[rep * n_nucs * %d + (reaction_nuc + 1) * %d + k] = 0;\n", problem->n_tfs, problem->n_tfs);
 	g_string_append_printf(krn, "								}\n");
@@ -4612,7 +4619,7 @@ void propagate_with_transport_5 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 	t_start_slow = tc->t_start;
 	t_stop_slow = tc->t_end;
 /* Simulate */
-	cl_int seed_rng = g_rand_int(grand);
+	cl_int seed_rng = g_rand_int_range(grand, 1, problem->repeats * problem->n_nucs + 1);
 	timestamp_type time1, time2;
 	get_timestamp(&time1);
 /*
@@ -4682,11 +4689,12 @@ void propagate_with_transport_5 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 	* The total number of work-items in the work-group must be less than or equal to the CL_DEVICE_MAX_WORK_GROUP_SIZE
 	* the number of work-items specified in local_work_size[0],... local_work_size[work_dim - 1] must be less than or equal to the corresponding values specified by CL_DEVICE_MAX_WORK_ITEM_SIZES[0],.... CL_DEVICE_MAX_WORK_ITEM_SIZES[work_dim - 1] */
 
-	size_t ldim[] = { problem->cl_group_size };
-
+//	size_t ldim[] = { problem->cl_group_size };
+	size_t ldim[] = { 1 };
 	/* the number of global work-items: 2^(CL_DEVICE_ADDRESS_BITS = 32) - 1 */
 
-	size_t gdim[] = { ((problem->cl_group_size * problem->repeats + ldim[0] - 1)/ldim[0]) * ldim[0] };
+//	size_t gdim[] = { ((problem->cl_group_size * problem->repeats + ldim[0] - 1)/ldim[0]) * ldim[0] };
+	size_t gdim[] = { 1 };
 
 	CALL_CL_GUARDED(clEnqueueNDRangeKernel,
 		(queue, knl_propagate,
@@ -5377,6 +5385,8 @@ int get_local_id(int arg) {return 0;};
 int get_local_size(int arg) {return 1;};
 int get_global_id(int arg) {return 0;};
 int get_global_size(int arg) {return 1;};
+int get_group_id(int arg) {return 0;};
+int get_num_groups(int arg) {return 1;};
 
 #include "mssa_propagate.cl"
 
@@ -6055,7 +6065,7 @@ void propagate_with_transport_4 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 										break;
 									}
 								}
-								if (found == 1) break;
+								if (found != -1) break;
 							}
 						}
 						tau_fast = -log(drnd(&(seedrn[rep * tc->n_nucs + ap]))) / prop_sum;
@@ -6791,8 +6801,13 @@ void connect (MSSA_Timeclass *tc, MSSA_Problem *problem)
 
 void mssa_mark_site_overlap (MSSA_Problem *problem, int range)
 {
+/*
 #pragma omp parallel for collapse(2) schedule(static) default(none) shared(range, problem)
 	for(int k = 0; k < problem->n_nucs; k++) {
+*/
+	int k = 0;
+#pragma omp parallel for schedule(static) default(none) shared(range, problem, k)
+
 		for (int i = 0; i < problem->n_target_genes; i++) {
 			for (int j = 0; j < problem->n_sites[i]; j++) {
 				int kount_fw = 0;
@@ -6825,7 +6840,9 @@ void mssa_mark_site_overlap (MSSA_Problem *problem, int range)
 				problem->allele_0[k][i][j].blocked_bk = problem->allele_1[k][i][j].blocked_bk = kount_bk;
 			}
 		}
+/*
 	}
+*/
 }
 
 void run_parallel(MSSA_Timeclass *tc, MSSA_Problem *problem)
