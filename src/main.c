@@ -4620,8 +4620,8 @@ void propagate_with_transport_5 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 	t_stop_slow = tc->t_end;
 /* Simulate */
 	cl_int seed_rng = g_rand_int_range(grand, 1, problem->repeats * problem->n_nucs + 1);
-	timestamp_type time1, time2;
-	get_timestamp(&time1);
+	gint64 time1 = g_get_real_time();
+	gint64 time2;
 /*
  transfer to device
 */
@@ -4725,8 +4725,8 @@ void propagate_with_transport_5 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 		sizeof(int) * problem->repeats * problem->sum_sites * problem->n_nucs, problem->status_allele_0,
 		0, NULL, NULL));
 	CALL_CL_GUARDED(clFinish, (queue));
-	get_timestamp(&time2);
-	double elapsed = timestamp_diff_in_seconds(time1, time2);
+	time2 = g_get_real_time();
+	double elapsed = (time2 - time2)/G_USEC_PER_SEC;
 	printf("tc %d: %f s\n", tc->kounter, elapsed);
 	if (verbose) mssa_print_timeclass (tc, problem);
 }
@@ -4749,8 +4749,8 @@ void propagate_with_transport_3 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 	t_start_slow = tc->t_start;
 	t_stop_slow = tc->t_end;
 /* Simulate */
-	timestamp_type time1, time2;
-	get_timestamp(&time1);
+	gint64 time1 = g_get_real_time();
+	gint64 time2;
 	if (interphase == 1) { /* interphase */
 /*
  transfer to device
@@ -5339,8 +5339,8 @@ void propagate_with_transport_3 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 	g_free(propensity);
 	g_free(probability);
 	g_free(seedrn);
-	get_timestamp(&time2);
-	double elapsed = timestamp_diff_in_seconds(time1, time2);
+	time2 = g_get_real_time();
+	double elapsed = (time2 - time2)/G_USEC_PER_SEC;
 	printf("tc %d: %f s\n", tc->kounter, elapsed);
 	if (verbose) mssa_print_timeclass (tc, problem);
 }
@@ -5397,8 +5397,8 @@ void propagate_with_transport_6 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 	int slow_only = (tc->type == 3) ? 1 : 0;
 	int interphase = 1 - slow_only;
 	int seed_rng = 1;
-	timestamp_type time1, time2;
-	get_timestamp(&time1);
+	gint64 time1 = g_get_real_time();
+	gint64 time2;
 			mssa_propagate(
 				seed_rng, // 1
 				tc->solution_mrna, // 2
@@ -5432,8 +5432,8 @@ void propagate_with_transport_6 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 				problem->repeats,
 				tc->t_start, // 30
 				tc->t_end); // 31
-	get_timestamp(&time2);
-	double elapsed = timestamp_diff_in_seconds(time1, time2);
+	time2 = g_get_real_time();
+	double elapsed = (time2 - time2)/G_USEC_PER_SEC;
 	printf("tc %d: %f s\n", tc->kounter, elapsed);
 	if (verbose) mssa_print_timeclass (tc, problem);
 }
@@ -5871,8 +5871,8 @@ void propagate_with_transport_4 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 	t_stop_slow = tc->t_end;
 /* Simulate */
 	int iter_kounter = 0;
-	timestamp_type time1, time2;
-	get_timestamp(&time1);
+	gint64 time1 = g_get_real_time();
+	gint64 time2;
 	int seedrng = 1;
 	double *propensity = g_new0(double, problem->number_of_reactions_per_nuc * tc->n_nucs * problem->repeats);
 	double *probability = g_new0(double, problem->number_of_reactions_per_nuc * tc->n_nucs * problem->repeats);
@@ -6659,8 +6659,8 @@ void propagate_with_transport_4 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 		g_free(probability_fast);
 		g_free(site_tab);
 	}
-	get_timestamp(&time2);
-	double elapsed = timestamp_diff_in_seconds(time1, time2);
+	time2 = g_get_real_time();
+	double elapsed = (time2 - time2)/G_USEC_PER_SEC;
 	printf("tc %d: %f s\n", tc->kounter, elapsed);
 	if (verbose) mssa_print_timeclass (tc, problem);
 }
