@@ -3980,68 +3980,50 @@ void setup_device (MSSA_Problem *problem)
 	g_string_append_printf(krn, "								}\n");
 	g_string_append_printf(krn, "							}\n");
 	g_string_append_printf(krn, "							if (found != -1) break;\n");
-/*
-	g_string_append_printf(krn, "						}\n");
-	g_string_append_printf(krn, "						if (found == -1) {\n");
-	g_string_append_printf(krn, "							for (i = 0; i < %d; i++) {\n", problem->n_target_genes);
-*/
-	g_string_append_printf(krn, "								for (j = 0; j < %d; j++) {\n", problem->n_tfs);
-	g_string_append_printf(krn, "									reaction_number = %d * %d + i * %d + j;\n", problem->n_tfs, problem->n_target_genes, problem->n_tfs);
-	g_string_append_printf(krn, "									aggregate += propensity_fast[ap * %d + reaction_number];\n", problem->number_of_reactions_fast_per_nuc);
-	g_string_append_printf(krn, "									probability_fast[ap * %d + reaction_number] = aggregate / prop_sum;\n", problem->number_of_reactions_fast_per_nuc);
-	g_string_append_printf(krn, "									if (random < probability_fast[ap * %d + reaction_number]) {\n", problem->number_of_reactions_fast_per_nuc);
-	g_string_append_printf(krn, "										found = reaction_number;\n");
-	g_string_append_printf(krn, "										promoter_number = i;\n");
-	g_string_append_printf(krn, "										tf = j;\n");
-	g_string_append_printf(krn, "										reaction_type = 1;\n");
-	g_string_append_printf(krn, "										allele = 1;\n");
-	g_string_append_printf(krn, "										break;\n");
-	g_string_append_printf(krn, "									}\n");
+	g_string_append_printf(krn, "							for (j = 0; j < %d; j++) {\n", problem->n_tfs);
+	g_string_append_printf(krn, "								reaction_number = %d * %d + i * %d + j;\n", problem->n_tfs, problem->n_target_genes, problem->n_tfs);
+	g_string_append_printf(krn, "								aggregate += propensity_fast[ap * %d + reaction_number];\n", problem->number_of_reactions_fast_per_nuc);
+	g_string_append_printf(krn, "								probability_fast[ap * %d + reaction_number] = aggregate / prop_sum;\n", problem->number_of_reactions_fast_per_nuc);
+	g_string_append_printf(krn, "								if (random < probability_fast[ap * %d + reaction_number]) {\n", problem->number_of_reactions_fast_per_nuc);
+	g_string_append_printf(krn, "									found = reaction_number;\n");
+	g_string_append_printf(krn, "									promoter_number = i;\n");
+	g_string_append_printf(krn, "									tf = j;\n");
+	g_string_append_printf(krn, "									reaction_type = 1;\n");
+	g_string_append_printf(krn, "									allele = 1;\n");
+	g_string_append_printf(krn, "									break;\n");
 	g_string_append_printf(krn, "								}\n");
-	g_string_append_printf(krn, "								if (found != -1) break;\n");
-/*
 	g_string_append_printf(krn, "							}\n");
-	g_string_append_printf(krn, "						}\n");
-	g_string_append_printf(krn, "						if (found == -1) {\n");
-	g_string_append_printf(krn, "							for (i = 0; i < %d; i++) {\n", problem->n_target_genes);
-*/
+	g_string_append_printf(krn, "							if (found != -1) break;\n");
 				/* Unbinding */
-	g_string_append_printf(krn, "								for (j = 0; j < %d; j++) {\n", problem->n_tfs);
-	g_string_append_printf(krn, "									reaction_number = 2 * %d * %d + i * %d + j;\n", problem->n_tfs, problem->n_target_genes, problem->n_tfs);
-	g_string_append_printf(krn, "									aggregate += propensity_fast[ap * %d + reaction_number];\n", problem->number_of_reactions_fast_per_nuc);
-	g_string_append_printf(krn, "									probability_fast[ap * %d + reaction_number] = aggregate / prop_sum;\n", problem->number_of_reactions_fast_per_nuc);
-	g_string_append_printf(krn, "									if (random < probability_fast[ap * %d + reaction_number]) {\n", problem->number_of_reactions_fast_per_nuc);
-	g_string_append_printf(krn, "										found = reaction_number;\n");
-	g_string_append_printf(krn, "										promoter_number = i;\n");
-	g_string_append_printf(krn, "										tf = j;\n");
-	g_string_append_printf(krn, "										reaction_type = 0;\n");
-	g_string_append_printf(krn, "										allele = 0;\n");
-	g_string_append_printf(krn, "										break;\n");
-	g_string_append_printf(krn, "									}\n");
+	g_string_append_printf(krn, "							for (j = 0; j < %d; j++) {\n", problem->n_tfs);
+	g_string_append_printf(krn, "								reaction_number = 2 * %d * %d + i * %d + j;\n", problem->n_tfs, problem->n_target_genes, problem->n_tfs);
+	g_string_append_printf(krn, "								aggregate += propensity_fast[ap * %d + reaction_number];\n", problem->number_of_reactions_fast_per_nuc);
+	g_string_append_printf(krn, "								probability_fast[ap * %d + reaction_number] = aggregate / prop_sum;\n", problem->number_of_reactions_fast_per_nuc);
+	g_string_append_printf(krn, "								if (random < probability_fast[ap * %d + reaction_number]) {\n", problem->number_of_reactions_fast_per_nuc);
+	g_string_append_printf(krn, "									found = reaction_number;\n");
+	g_string_append_printf(krn, "									promoter_number = i;\n");
+	g_string_append_printf(krn, "									tf = j;\n");
+	g_string_append_printf(krn, "									reaction_type = 0;\n");
+	g_string_append_printf(krn, "									allele = 0;\n");
+	g_string_append_printf(krn, "									break;\n");
 	g_string_append_printf(krn, "								}\n");
-	g_string_append_printf(krn, "								if (found != -1) break;\n");
-/*
 	g_string_append_printf(krn, "							}\n");
+	g_string_append_printf(krn, "							if (found != -1) break;\n");
+	g_string_append_printf(krn, "							for (j = 0; j < %d; j++) {\n", problem->n_tfs);
+	g_string_append_printf(krn, "								reaction_number = 3 * %d * %d + i * %d + j;\n", problem->n_tfs, problem->n_target_genes, problem->n_tfs);
+	g_string_append_printf(krn, "								aggregate += propensity_fast[ap * %d + reaction_number];\n", problem->number_of_reactions_fast_per_nuc);
+	g_string_append_printf(krn, "								probability_fast[ap * %d + reaction_number] = aggregate / prop_sum;\n", problem->number_of_reactions_fast_per_nuc);
+	g_string_append_printf(krn, "								if (random < probability_fast[ap * %d + reaction_number]) {\n", problem->number_of_reactions_fast_per_nuc);
+	g_string_append_printf(krn, "									found = reaction_number;\n");
+	g_string_append_printf(krn, "									promoter_number = i;\n");
+	g_string_append_printf(krn, "									tf = j;\n");
+	g_string_append_printf(krn, "									reaction_type = 0;\n");
+	g_string_append_printf(krn, "									allele = 1;\n");
+	g_string_append_printf(krn, "									break;\n");
+	g_string_append_printf(krn, "								}\n");
+	g_string_append_printf(krn, "							}\n");
+	g_string_append_printf(krn, "							if (found != -1) break;\n");
 	g_string_append_printf(krn, "						}\n");
-	g_string_append_printf(krn, "						if (found == -1) {\n");
-	g_string_append_printf(krn, "							for (i = 0; i < %d; i++) {\n", problem->n_target_genes);
-*/
-	g_string_append_printf(krn, "								for (j = 0; j < %d; j++) {\n", problem->n_tfs);
-	g_string_append_printf(krn, "									reaction_number = 3 * %d * %d + i * %d + j;\n", problem->n_tfs, problem->n_target_genes, problem->n_tfs);
-	g_string_append_printf(krn, "									aggregate += propensity_fast[ap * %d + reaction_number];\n", problem->number_of_reactions_fast_per_nuc);
-	g_string_append_printf(krn, "									probability_fast[ap * %d + reaction_number] = aggregate / prop_sum;\n", problem->number_of_reactions_fast_per_nuc);
-	g_string_append_printf(krn, "									if (random < probability_fast[ap * %d + reaction_number]) {\n", problem->number_of_reactions_fast_per_nuc);
-	g_string_append_printf(krn, "										found = reaction_number;\n");
-	g_string_append_printf(krn, "										promoter_number = i;\n");
-	g_string_append_printf(krn, "										tf = j;\n");
-	g_string_append_printf(krn, "										reaction_type = 0;\n");
-	g_string_append_printf(krn, "										allele = 1;\n");
-	g_string_append_printf(krn, "										break;\n");
-	g_string_append_printf(krn, "									}\n");
-	g_string_append_printf(krn, "								}\n");
-	g_string_append_printf(krn, "								if (found != -1) break;\n");
-	g_string_append_printf(krn, "							}\n");
-//	g_string_append_printf(krn, "						}\n");
 	g_string_append_printf(krn, "						tau_fast = -log(rnd_double(&seed)) / prop_sum;\n");
 	g_string_append_printf(krn, "						site_number = -1;\n");
 	g_string_append_printf(krn, "						if (found != -1) {\n");
@@ -4394,41 +4376,6 @@ void setup_device (MSSA_Problem *problem)
 	g_string_append_printf(krn, "								reaction_index = 5;\n");
 	g_string_append_printf(krn, "								break;\n");
 	g_string_append_printf(krn, "							}\n");
-/*
-	g_string_append_printf(krn, "						}\n");
-	g_string_append_printf(krn, "						if (reaction_index != -1) {\n");
-	g_string_append_printf(krn, "							break;\n");
-	g_string_append_printf(krn, "						}\n");
-	g_string_append_printf(krn, "					}\n");
-	g_string_append_printf(krn, "				}\n");
-	g_string_append_printf(krn, "				if (reaction_index == -1) {\n");
-	g_string_append_printf(krn, "					int ap = 0;\n");
-	g_string_append_printf(krn, "					for (int i = 0; i < %d; i++) {\n", problem->n_target_genes);
-/* right mrna
-	g_string_append_printf(krn, "						int reaction_number = ap * %d + 6 * %d + i;\n", problem->number_of_reactions_per_nuc, problem->n_target_genes);
-	g_string_append_printf(krn, "						aggregate += propensity[reaction_number];\n");
-	g_string_append_printf(krn, "						probability[reaction_number] = aggregate / prop_sum_all;\n");
-	g_string_append_printf(krn, "						if (random < probability[reaction_number]) {\n");
-	g_string_append_printf(krn, "							reaction_nuc = ap;\n");
-	g_string_append_printf(krn, "							reaction_target = i;\n");
-	g_string_append_printf(krn, "							reaction_index = 7;\n");
-	g_string_append_printf(krn, "							break;\n");
-	g_string_append_printf(krn, "						}\n");
-/* right protein
-	g_string_append_printf(krn, "						reaction_number = ap * %d + 8 * %d + i;\n", problem->number_of_reactions_per_nuc, problem->n_target_genes);
-	g_string_append_printf(krn, "						aggregate += propensity[reaction_number];\n");
-	g_string_append_printf(krn, "						probability[reaction_number] = aggregate / prop_sum_all;\n");
-	g_string_append_printf(krn, "						if (random < probability[reaction_number]) {\n");
-	g_string_append_printf(krn, "							reaction_nuc = ap;\n");
-	g_string_append_printf(krn, "							reaction_target = i;\n");
-	g_string_append_printf(krn, "							reaction_index = 9;\n");
-	g_string_append_printf(krn, "							break;\n");
-	g_string_append_printf(krn, "						}\n");
-	g_string_append_printf(krn, "					}\n");
-	g_string_append_printf(krn, "					if (reaction_index == -1) {\n");
-	g_string_append_printf(krn, "						for (int ap = 1; ap < n_nucs - 1; ap++) {\n");
-	g_string_append_printf(krn, "							for (int i = 0; i < %d; i++) {\n", problem->n_target_genes);
-*/
 	g_string_append_printf(krn, "					       if (ap > 0) {\n");
 /* left mrna*/
 	g_string_append_printf(krn, "								reaction_number = ap * %d + 5 * %d + i;\n", problem->number_of_reactions_per_nuc, problem->n_target_genes);
@@ -4451,9 +4398,6 @@ void setup_device (MSSA_Problem *problem)
 	g_string_append_printf(krn, "									break;\n");
 	g_string_append_printf(krn, "								}\n");
 	g_string_append_printf(krn, "							}\n");
-//	g_string_append_printf(krn, "							if (reaction_index != -1) {\n");
-//	g_string_append_printf(krn, "								break;\n");
-//	g_string_append_printf(krn, "							}\n");
 	g_string_append_printf(krn, "							if (ap < n_nucs - 1) {\n");
 /* right mrna*/
 	g_string_append_printf(krn, "								reaction_number = ap * %d + 6 * %d + i;\n", problem->number_of_reactions_per_nuc, problem->n_target_genes);
@@ -4476,41 +4420,11 @@ void setup_device (MSSA_Problem *problem)
 	g_string_append_printf(krn, "									break;\n");
 	g_string_append_printf(krn, "								}\n");
 	g_string_append_printf(krn, "							}\n");
-//	g_string_append_printf(krn, "							if (reaction_index != -1) {\n");
-//	g_string_append_printf(krn, "								break;\n");
-//	g_string_append_printf(krn, "							}\n");
 	g_string_append_printf(krn, "						}\n");
 	g_string_append_printf(krn, "						if (reaction_index != -1) {\n");
 	g_string_append_printf(krn, "							break;\n");
 	g_string_append_printf(krn, "						}\n");
 	g_string_append_printf(krn, "					}\n");
-/*
-	g_string_append_printf(krn, "					if (reaction_index == -1) {\n");
-	g_string_append_printf(krn, "						int ap = n_nucs - 1;\n");
-	g_string_append_printf(krn, "						for (int i = 0; i < %d; i++) {\n", problem->n_target_genes);
-/* right mrna
-	g_string_append_printf(krn, "							int reaction_number = ap * %d + 5 * %d + i;\n", problem->number_of_reactions_per_nuc, problem->n_target_genes);
-	g_string_append_printf(krn, "							aggregate += propensity[reaction_number];\n");
-	g_string_append_printf(krn, "							probability[reaction_number] = aggregate / prop_sum_all;\n");
-	g_string_append_printf(krn, "							if (random < probability[reaction_number]) {\n");
-	g_string_append_printf(krn, "								reaction_nuc = ap;\n");
-	g_string_append_printf(krn, "								reaction_target = i;\n");
-	g_string_append_printf(krn, "								reaction_index = 6;\n");
-	g_string_append_printf(krn, "								break;\n");
-	g_string_append_printf(krn, "							}\n");
-/* right protein
-	g_string_append_printf(krn, "							reaction_number = ap * %d + 7 * %d + i;\n", problem->number_of_reactions_per_nuc, problem->n_target_genes);
-	g_string_append_printf(krn, "							aggregate += propensity[reaction_number];\n");
-	g_string_append_printf(krn, "							probability[reaction_number] = aggregate / prop_sum_all;\n");
-	g_string_append_printf(krn, "							if (random < probability[reaction_number]) {\n");
-	g_string_append_printf(krn, "								reaction_nuc = ap;\n");
-	g_string_append_printf(krn, "								reaction_target = i;\n");
-	g_string_append_printf(krn, "								reaction_index = 8;\n");
-	g_string_append_printf(krn, "								break;\n");
-	g_string_append_printf(krn, "							}\n");
-	g_string_append_printf(krn, "						}\n");
-	g_string_append_printf(krn, "					}\n");
-*/
 	g_string_append_printf(krn, "				}\n");
 	g_string_append_printf(krn, "				if (reaction_index != -1) {\n");
 	g_string_append_printf(krn, "					int k = target_gene_index[reaction_target];\n");
@@ -4579,8 +4493,6 @@ void setup_device (MSSA_Problem *problem)
 	g_string_append_printf(krn, "					tau_slow_loc[ap] = tau_slow;\n");
 	g_string_append_printf(krn, "				}\n");
 	g_string_append_printf(krn, "			}\n"); /* if nuc_id == 0 */
-//	g_string_append_printf(krn, "			barrier(CLK_LOCAL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE);\n"); // no effect
-//	g_string_append_printf(krn, "			tau_slow = tau_slow_loc[nuc_id];\n");
 	g_string_append_printf(krn, "			for (int ap = nuc_id; ap < n_nucs; ap += nuc_size) {\n");
 	g_string_append_printf(krn, "				for (int i = 0; i < %d; i++) {\n", problem->n_target_genes);
 	g_string_append_printf(krn, "					int reaction_number = ap * %d + 0 * %d + i;\n", problem->number_of_reactions_per_nuc, problem->n_target_genes);
@@ -4705,12 +4617,12 @@ void propagate_with_transport_5 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 	* The total number of work-items in the work-group must be less than or equal to the CL_DEVICE_MAX_WORK_GROUP_SIZE
 	* the number of work-items specified in local_work_size[0],... local_work_size[work_dim - 1] must be less than or equal to the corresponding values specified by CL_DEVICE_MAX_WORK_ITEM_SIZES[0],.... CL_DEVICE_MAX_WORK_ITEM_SIZES[work_dim - 1] */
 
-//	size_t ldim[] = { problem->cl_group_size };
-	size_t ldim[] = { 1 };
+	size_t ldim[] = { problem->cl_group_size };
+//	size_t ldim[] = { 1 };
 	/* the number of global work-items: 2^(CL_DEVICE_ADDRESS_BITS = 32) - 1 */
 
-//	size_t gdim[] = { ((problem->cl_group_size * problem->repeats + ldim[0] - 1)/ldim[0]) * ldim[0] };
-	size_t gdim[] = { 1 };
+	size_t gdim[] = { ((problem->cl_group_size * problem->repeats + ldim[0] - 1)/ldim[0]) * ldim[0] };
+//	size_t gdim[] = { 1 };
 
 	CALL_CL_GUARDED(clEnqueueNDRangeKernel,
 		(queue, knl_propagate,
@@ -4742,7 +4654,7 @@ void propagate_with_transport_5 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 		0, NULL, NULL));
 	CALL_CL_GUARDED(clFinish, (queue));
 	time2 = g_get_real_time();
-	double elapsed = (time2 - time2)/G_USEC_PER_SEC;
+	double elapsed = (time2 - time1)/G_USEC_PER_SEC;
 	printf("tc %d: %f s\n", tc->kounter, elapsed);
 	if (verbose) mssa_print_timeclass (tc, problem);
 }
@@ -5356,7 +5268,7 @@ void propagate_with_transport_3 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 	g_free(probability);
 	g_free(seedrn);
 	time2 = g_get_real_time();
-	double elapsed = (time2 - time2)/G_USEC_PER_SEC;
+	double elapsed = (time2 - time1)/G_USEC_PER_SEC;
 	printf("tc %d: %f s\n", tc->kounter, elapsed);
 	if (verbose) mssa_print_timeclass (tc, problem);
 }
@@ -5449,7 +5361,7 @@ void propagate_with_transport_6 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 				tc->t_start, // 30
 				tc->t_end); // 31
 	time2 = g_get_real_time();
-	double elapsed = (time2 - time2)/G_USEC_PER_SEC;
+	double elapsed = (time2 - time1)/G_USEC_PER_SEC;
 	printf("tc %d: %f s\n", tc->kounter, elapsed);
 	if (verbose) mssa_print_timeclass (tc, problem);
 }
@@ -6676,7 +6588,7 @@ void propagate_with_transport_4 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 		g_free(site_tab);
 	}
 	time2 = g_get_real_time();
-	double elapsed = (time2 - time2)/G_USEC_PER_SEC;
+	double elapsed = (time2 - time1)/G_USEC_PER_SEC;
 	printf("tc %d: %f s\n", tc->kounter, elapsed);
 	if (verbose) mssa_print_timeclass (tc, problem);
 }
