@@ -3855,11 +3855,12 @@ void setup_device (MSSA_Problem *problem)
 	g_string_append_printf(krn, "	__local int site_tab[%d];\n", problem->number_of_reactions_fast_per_nuc * problem->n_nucs);
 	g_string_append_printf(krn, "	__local double prop_sum_loc[%d];\n", problem->cl_group_size); /* should be group size */
 	g_string_append_printf(krn, "	__local double tau_slow_loc[%d];\n", problem->cl_group_size); /* should be group size */
-	g_string_append_printf(krn, "	double tau_slow, t_slow;\n");
 	g_string_append_printf(krn, "	int seed = seed_rng + rep_id * n_nucs + nuc_id;\n");
-  	g_string_append_printf(krn, "	t_slow = t_start_slow;\n");
-  	g_string_append_printf(krn, "	double random;\n");
 	g_string_append_printf(krn, "	for (int rep = rep_id; rep < n_reps; rep += rep_size) {\n");
+  	g_string_append_printf(krn, "		double random;\n");
+	g_string_append_printf(krn, "		double t_slow;\n");
+	g_string_append_printf(krn, "		double tau_slow;\n");
+  	g_string_append_printf(krn, "		t_slow = t_start_slow;\n");
 	g_string_append_printf(krn, "		while (t_slow < t_stop_slow) {\n");
   	g_string_append_printf(krn, "			if (interphase == 1) { /* interphase */\n");
 /* start of parallel region */
@@ -5826,7 +5827,11 @@ void propagate_with_transport_4 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 			seedrn[rep * tc->n_nucs + ap] = seedrng + rep * tc->n_nucs + ap;
 		}
 	}
+/*
+ * omp_set_nested(1);
+ * OMP_NESTED=1
 #pragma omp parallel for schedule(static) default(none) shared(problem, tc, propensity, probability, propensity_fast, probability_fast, site_tab, t_start_slow, t_stop_slow, interphase, seedrn, fast_time_max)
+*/
 	for (int rep = 0; rep < problem->repeats; rep++) {
 		double tau_slow, t_slow;
 	  	t_slow = t_start_slow;
@@ -5852,8 +5857,7 @@ void propagate_with_transport_4 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 						double random = drnd(&(seedrn[rep * tc->n_nucs + ap]));
 					/* Binding */
 						for (i = 0; i < problem->n_target_genes; i++) {
-							sl = (int)(drnd(&(seedrn[rep * tc->n_nucs + ap])) * problem->n_sites[i]);
-							s = sl;
+							s = (int)(drnd(&(seedrn[rep * tc->n_nucs + ap])) * problem->n_sites[i]);
 							for (k = 0; k < problem->n_sites[i]; k++) {
 								if (problem->status_allele_0[rep * tc->n_nucs * problem->sum_sites + ap * problem->sum_sites + problem->m_sites[i] + s] == 0) {
 									double prop = 0;
@@ -5864,16 +5868,6 @@ void propagate_with_transport_4 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 									site_tab[rep * problem->number_of_reactions_fast_per_nuc * tc->n_nucs + ap * problem->number_of_reactions_fast_per_nuc + reaction_number] = s;
 									prop_sum += prop;
 								}
-								s++;
-								if (s > problem->n_sites[i] - 1) {
-									s = 0;
-								}
-							}
-						}
-						for (i = 0; i < problem->n_target_genes; i++) {
-							sl = (int)(drnd(&(seedrn[rep * tc->n_nucs + ap])) * problem->n_sites[i]);
-							s = sl;
-							for (k = 0; k < problem->n_sites[i]; k++) {
 								if (problem->status_allele_1[rep * tc->n_nucs * problem->sum_sites + ap * problem->sum_sites + problem->m_sites[i] + s] == 0) {
 									double prop = 0;
 									j = problem->tf_index_allele_1[problem->m_sites[i] + s];
@@ -5883,17 +5877,7 @@ void propagate_with_transport_4 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 									site_tab[rep * problem->number_of_reactions_fast_per_nuc * tc->n_nucs + ap * problem->number_of_reactions_fast_per_nuc + reaction_number] = s;
 									prop_sum += prop;
 								}
-								s++;
-								if (s > problem->n_sites[i] - 1) {
-									s = 0;
-								}
-							}
-						}
 					/* Unbinding */
-						for (i = 0; i < problem->n_target_genes; i++) {
-							sl = (int)(drnd(&(seedrn[rep * tc->n_nucs + ap])) * problem->n_sites[i]);
-							s = sl;
-							for (k = 0; k < problem->n_sites[i]; k++) {
 								if (problem->status_allele_0[rep * tc->n_nucs * problem->sum_sites + ap * problem->sum_sites + problem->m_sites[i] + s] == 1) {
 									double prop = 0;
 									j = problem->tf_index_allele_0[problem->m_sites[i] + s];
@@ -5903,16 +5887,6 @@ void propagate_with_transport_4 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 									site_tab[rep * problem->number_of_reactions_fast_per_nuc * tc->n_nucs + ap * problem->number_of_reactions_fast_per_nuc + reaction_number] = s;
 									prop_sum += prop;
 								}
-								s++;
-								if (s > problem->n_sites[i] - 1) {
-									s = 0;
-								}
-							}
-						}
-						for (i = 0; i < problem->n_target_genes; i++) {
-							sl = (int)(drnd(&(seedrn[rep * tc->n_nucs + ap])) * problem->n_sites[i]);
-							s = sl;
-							for (k = 0; k < problem->n_sites[i]; k++) {
 								if (problem->status_allele_1[rep * tc->n_nucs * problem->sum_sites + ap * problem->sum_sites + problem->m_sites[i] + s] == 1) {
 									double prop = 0; /* Sum of energies of bound bs */
 									j = problem->tf_index_allele_1[problem->m_sites[i] + s];
@@ -5938,9 +5912,9 @@ void propagate_with_transport_4 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 						}
 						found = -1;
 						aggregate = 0;
-					/* Binding */
 						for (i = 0; i < problem->n_target_genes; i++) {
 							for (j = 0; j < problem->n_tfs; j++) {
+					/* Binding */
 								reaction_number = i * problem->n_tfs + j;
 								aggregate += propensity_fast[rep * problem->number_of_reactions_fast_per_nuc * tc->n_nucs + ap * problem->number_of_reactions_fast_per_nuc + reaction_number];
 								probability_fast[rep * problem->number_of_reactions_fast_per_nuc * tc->n_nucs + ap * problem->number_of_reactions_fast_per_nuc + reaction_number] = aggregate / prop_sum;
@@ -5952,63 +5926,42 @@ void propagate_with_transport_4 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 									allele = 0;
 									break;
 								}
+								reaction_number = problem->n_tfs * problem->n_target_genes + i * problem->n_tfs + j;
+								aggregate += propensity_fast[rep * problem->number_of_reactions_fast_per_nuc * tc->n_nucs + ap * problem->number_of_reactions_fast_per_nuc + reaction_number];
+								probability_fast[rep * problem->number_of_reactions_fast_per_nuc * tc->n_nucs + ap * problem->number_of_reactions_fast_per_nuc + reaction_number] = aggregate / prop_sum;
+								if (random < probability_fast[rep * problem->number_of_reactions_fast_per_nuc * tc->n_nucs + ap * problem->number_of_reactions_fast_per_nuc + reaction_number]) {
+									found = reaction_number;
+									promoter_number = i;
+									tf = j;
+									reaction_type = 1;
+									allele = 1;
+									break;
+								}
+				/* Unbinding */
+								reaction_number = 2 * problem->n_tfs * problem->n_target_genes + i * problem->n_tfs + j;
+								aggregate += propensity_fast[rep * problem->number_of_reactions_fast_per_nuc * tc->n_nucs + ap * problem->number_of_reactions_fast_per_nuc + reaction_number];
+								probability_fast[rep * problem->number_of_reactions_fast_per_nuc * tc->n_nucs + ap * problem->number_of_reactions_fast_per_nuc + reaction_number] = aggregate / prop_sum;
+								if (random < probability_fast[rep * problem->number_of_reactions_fast_per_nuc * tc->n_nucs + ap * problem->number_of_reactions_fast_per_nuc + reaction_number]) {
+									found = reaction_number;
+									promoter_number = i;
+									tf = j;
+									reaction_type = 0;
+									allele = 0;
+									break;
+								}
+								reaction_number = 3 * problem->n_tfs * problem->n_target_genes + i * problem->n_tfs + j;
+								aggregate += propensity_fast[rep * problem->number_of_reactions_fast_per_nuc * tc->n_nucs + ap * problem->number_of_reactions_fast_per_nuc + reaction_number];
+								probability_fast[rep * problem->number_of_reactions_fast_per_nuc * tc->n_nucs + ap * problem->number_of_reactions_fast_per_nuc + reaction_number] = aggregate / prop_sum;
+								if (random < probability_fast[rep * problem->number_of_reactions_fast_per_nuc * tc->n_nucs + ap * problem->number_of_reactions_fast_per_nuc + reaction_number]) {
+									found = reaction_number;
+									promoter_number = i;
+									tf = j;
+									reaction_type = 0;
+									allele = 1;
+									break;
+								}
 							}
 							if (found != -1) break;
-						}
-						if (found == -1) {
-							for (i = 0; i < problem->n_target_genes; i++) {
-								for (j = 0; j < problem->n_tfs; j++) {
-									reaction_number = problem->n_tfs * problem->n_target_genes + i * problem->n_tfs + j;
-									aggregate += propensity_fast[rep * problem->number_of_reactions_fast_per_nuc * tc->n_nucs + ap * problem->number_of_reactions_fast_per_nuc + reaction_number];
-									probability_fast[rep * problem->number_of_reactions_fast_per_nuc * tc->n_nucs + ap * problem->number_of_reactions_fast_per_nuc + reaction_number] = aggregate / prop_sum;
-									if (random < probability_fast[rep * problem->number_of_reactions_fast_per_nuc * tc->n_nucs + ap * problem->number_of_reactions_fast_per_nuc + reaction_number]) {
-										found = reaction_number;
-										promoter_number = i;
-										tf = j;
-										reaction_type = 1;
-										allele = 1;
-										break;
-									}
-								}
-								if (found != -1) break;
-							}
-						}
-					/* Unbinding */
-						if (found == -1) {
-							for (i = 0; i < problem->n_target_genes; i++) {
-								for (j = 0; j < problem->n_tfs; j++) {
-									reaction_number = 2 * problem->n_tfs * problem->n_target_genes + i * problem->n_tfs + j;
-									aggregate += propensity_fast[rep * problem->number_of_reactions_fast_per_nuc * tc->n_nucs + ap * problem->number_of_reactions_fast_per_nuc + reaction_number];
-									probability_fast[rep * problem->number_of_reactions_fast_per_nuc * tc->n_nucs + ap * problem->number_of_reactions_fast_per_nuc + reaction_number] = aggregate / prop_sum;
-									if (random < probability_fast[rep * problem->number_of_reactions_fast_per_nuc * tc->n_nucs + ap * problem->number_of_reactions_fast_per_nuc + reaction_number]) {
-										found = reaction_number;
-										promoter_number = i;
-										tf = j;
-										reaction_type = 0;
-										allele = 0;
-										break;
-									}
-								}
-								if (found != -1) break;
-							}
-						}
-						if (found == -1) {
-							for (i = 0; i < problem->n_target_genes; i++) {
-								for (j = 0; j < problem->n_tfs; j++) {
-									reaction_number = 3 * problem->n_tfs * problem->n_target_genes + i * problem->n_tfs + j;
-									aggregate += propensity_fast[rep * problem->number_of_reactions_fast_per_nuc * tc->n_nucs + ap * problem->number_of_reactions_fast_per_nuc + reaction_number];
-									probability_fast[rep * problem->number_of_reactions_fast_per_nuc * tc->n_nucs + ap * problem->number_of_reactions_fast_per_nuc + reaction_number] = aggregate / prop_sum;
-									if (random < probability_fast[rep * problem->number_of_reactions_fast_per_nuc * tc->n_nucs + ap * problem->number_of_reactions_fast_per_nuc + reaction_number]) {
-										found = reaction_number;
-										promoter_number = i;
-										tf = j;
-										reaction_type = 0;
-										allele = 1;
-										break;
-									}
-								}
-								if (found != -1) break;
-							}
 						}
 						tau_fast = -log(drnd(&(seedrn[rep * tc->n_nucs + ap]))) / prop_sum;
 						site_number = -1;
@@ -6370,41 +6323,7 @@ void propagate_with_transport_4 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 							found = 1;
 							break;
 						}
-					}
-					if (found == 1) {
-						break;
-					}
-				}
-			}
-			if (found == 0) {
-				int ap = 0;
-				for (i = 0; i < problem->n_target_genes; i++) {
-		/* right mrna*/
-					reaction_number = ap * problem->number_of_reactions_per_nuc + 6 * problem->n_target_genes + i;
-					aggregate += propensity[rep * problem->number_of_reactions_per_nuc * tc->n_nucs + reaction_number];
-					probability[rep * problem->number_of_reactions_per_nuc * tc->n_nucs + reaction_number] = aggregate / prop_sum_all;
-					if (random < probability[rep * problem->number_of_reactions_per_nuc * tc->n_nucs + reaction_number]) {
-						reaction_nuc = ap;
-						reaction_target = i;
-						reaction_index = 7;
-						found = 1;
-						break;
-					}
-		/* right protein */
-					reaction_number = ap * problem->number_of_reactions_per_nuc + 8 * problem->n_target_genes + i;
-					aggregate += propensity[rep * problem->number_of_reactions_per_nuc * tc->n_nucs + reaction_number];
-					probability[rep * problem->number_of_reactions_per_nuc * tc->n_nucs + reaction_number] = aggregate / prop_sum_all;
-					if (random < probability[rep * problem->number_of_reactions_per_nuc * tc->n_nucs + reaction_number]) {
-						reaction_nuc = ap;
-						reaction_target = i;
-						reaction_index = 9;
-						found = 1;
-						break;
-					}
-				}
-				if (found == 0) {
-					for (ap = 1; ap < tc->n_nucs - 1; ap++) {
-						for (i = 0; i < problem->n_target_genes; i++) {
+						if (ap > 0) {
 		/* left mrna*/
 							reaction_number = ap * problem->number_of_reactions_per_nuc + 5 * problem->n_target_genes + i;
 							aggregate += propensity[rep * problem->number_of_reactions_per_nuc * tc->n_nucs + reaction_number];
@@ -6427,6 +6346,8 @@ void propagate_with_transport_4 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 								found = 1;
 								break;
 							}
+						}
+						if (ap < tc->n_nucs - 1) {
 		/* right mrna*/
 							reaction_number = ap * problem->number_of_reactions_per_nuc + 6 * problem->n_target_genes + i;
 							aggregate += propensity[rep * problem->number_of_reactions_per_nuc * tc->n_nucs + reaction_number];
@@ -6450,36 +6371,9 @@ void propagate_with_transport_4 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 								break;
 							}
 						}
-						if (found == 1) {
-							break;
-						}
 					}
-				}
-				if (found == 0) {
-					ap = tc->n_nucs - 1;
-					for (i = 0; i < problem->n_target_genes; i++) {
-		/* right mrna*/
-						reaction_number = ap * problem->number_of_reactions_per_nuc + 5 * problem->n_target_genes + i;
-						aggregate += propensity[rep * problem->number_of_reactions_per_nuc * tc->n_nucs + reaction_number];
-						probability[rep * problem->number_of_reactions_per_nuc * tc->n_nucs + reaction_number] = aggregate / prop_sum_all;
-						if (random < probability[rep * problem->number_of_reactions_per_nuc * tc->n_nucs + reaction_number]) {
-							reaction_nuc = ap;
-							reaction_target = i;
-							reaction_index = 6;
-							found = 1;
-							break;
-						}
-		/* right protein */
-						reaction_number = ap * problem->number_of_reactions_per_nuc + 7 * problem->n_target_genes + i;
-						aggregate += propensity[rep * problem->number_of_reactions_per_nuc * tc->n_nucs + reaction_number];
-						probability[rep * problem->number_of_reactions_per_nuc * tc->n_nucs + reaction_number] = aggregate / prop_sum_all;
-						if (random < probability[rep * problem->number_of_reactions_per_nuc * tc->n_nucs + reaction_number]) {
-							reaction_nuc = ap;
-							reaction_target = i;
-							reaction_index = 8;
-							found = 1;
-							break;
-						}
+					if (found == 1) {
+						break;
 					}
 				}
 			}
