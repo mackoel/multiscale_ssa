@@ -16,6 +16,10 @@
  * You should have received a copy of the GNU General Public License along
  * with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+/*
+ * To change to float do:
+ * cat main.c | sed -e "s/double/float/g" -e "s/%lf/%f/g" | sed -e "s/g_rand_float/g_rand_double/g"| grep -v EXTENSION > mssa_float.c
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -3292,8 +3296,8 @@ void setup_device (MSSA_Problem *problem)
  run code on device
 */
 //	CALL_CL_GUARDED(clFinish, (queue));
-
-	GString*krn = g_string_new("#pragma OPENCL EXTENSION cl_khr_fp64: enable\n");
+	GString*krn = g_string_new("\n");
+	g_string_append_printf(krn, "#pragma OPENCL EXTENSION cl_khr_fp64: enable\n");
 	g_string_append_printf(krn, "\n");
 /*langdon_2009_CIGPU.pdf*/
 	g_string_append_printf(krn, "double drnd_device(int* seed)\n"); // 1 <= *seed < m
@@ -3787,8 +3791,8 @@ void setup_device (MSSA_Problem *problem)
 	knl = kernel_from_string(ctx, krn->str, "mssa_reaction_fast", NULL);
 	g_string_free(krn, TRUE);
 
-
-	krn = g_string_new("#pragma OPENCL EXTENSION cl_khr_fp64: enable\n");
+	krn = g_string_new("\n");
+	g_string_append_printf(krn, "#pragma OPENCL EXTENSION cl_khr_fp64: enable\n");
 	g_string_append_printf(krn, "\n");
 /*langdon_2009_CIGPU.pdf*/
 	g_string_append_printf(krn, "double drnd_device(int* seed)\n"); // 1 <= *seed < m
