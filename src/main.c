@@ -3860,41 +3860,40 @@ void setup_device (MSSA_Problem *problem)
 	g_string_append_printf(krn, "	__local double prop_sum_loc[%d];\n", problem->cl_group_size); /* should be group size */
 	g_string_append_printf(krn, "	__local double tau_slow_loc[%d];\n", problem->cl_group_size); /* should be group size */
 	g_string_append_printf(krn, "	int seed = seed_rng + rep_id * n_nucs + nuc_id;\n");
-	g_string_append_printf(krn, "				for (int ap = nuc_id; ap < n_nucs; ap += nuc_size) {\n");
-	g_string_append_printf(krn, "						for (int i = 0; i < %d; i++) {\n", problem->n_target_genes);
-	g_string_append_printf(krn, "							for (int j = 0; j < %d; j++) {\n", problem->n_tfs);
-	g_string_append_printf(krn, "								int reaction_number = i * %d + j;\n", problem->n_tfs);
-	g_string_append_printf(krn, "								propensity_fast[ap * %d + reaction_number] = probability_fast[ap * %d + reaction_number] = 0;\n", problem->number_of_reactions_fast_per_nuc, problem->number_of_reactions_fast_per_nuc);
-	g_string_append_printf(krn, "								reaction_number = %d * %d + i * %d + j;\n", problem->n_tfs, problem->n_target_genes, problem->n_tfs);
-	g_string_append_printf(krn, "								propensity_fast[ap * %d + reaction_number] = probability_fast[ap * %d + reaction_number] = 0;\n", problem->number_of_reactions_fast_per_nuc, problem->number_of_reactions_fast_per_nuc);
-	g_string_append_printf(krn, "								reaction_number = 2 * %d * %d + i * %d + j;\n", problem->n_tfs, problem->n_target_genes, problem->n_tfs);
-	g_string_append_printf(krn, "								propensity_fast[ap * %d + reaction_number] = probability_fast[ap * %d + reaction_number] = 0;\n", problem->number_of_reactions_fast_per_nuc, problem->number_of_reactions_fast_per_nuc);
-	g_string_append_printf(krn, "								reaction_number = 3 * %d * %d + i * %d + j;\n", problem->n_tfs, problem->n_target_genes, problem->n_tfs);
-	g_string_append_printf(krn, "								propensity_fast[ap * %d + reaction_number] = probability_fast[ap * %d + reaction_number] = 0;\n", problem->number_of_reactions_fast_per_nuc, problem->number_of_reactions_fast_per_nuc);
-	g_string_append_printf(krn, "							}\n");
-
-	g_string_append_printf(krn, "					int reaction_number = ap * %d + 0 * %d + i;\n", problem->number_of_reactions_per_nuc, problem->n_target_genes);
-	g_string_append_printf(krn, "					propensity[reaction_number] = probability[reaction_number] = 0;\n");
-	g_string_append_printf(krn, "					reaction_number = ap * %d + 1 * %d + i;\n", problem->number_of_reactions_per_nuc, problem->n_target_genes);
-	g_string_append_printf(krn, "					propensity[reaction_number] = probability[reaction_number] = 0;\n");
-	g_string_append_printf(krn, "					reaction_number = ap * %d + 2 * %d + i;\n", problem->number_of_reactions_per_nuc, problem->n_target_genes);
-	g_string_append_printf(krn, "					propensity[reaction_number] = probability[reaction_number] = 0;\n");
-	g_string_append_printf(krn, "					reaction_number = ap * %d + 3 * %d + i;\n", problem->number_of_reactions_per_nuc, problem->n_target_genes);
-	g_string_append_printf(krn, "					propensity[reaction_number] = probability[reaction_number] = 0;\n");
-	g_string_append_printf(krn, "					reaction_number = ap * %d + 4 * %d + i;\n", problem->number_of_reactions_per_nuc, problem->n_target_genes);
-	g_string_append_printf(krn, "					propensity[reaction_number] = probability[reaction_number] = 0;\n");
-	g_string_append_printf(krn, "					reaction_number = ap * %d + 5 * %d + i;\n", problem->number_of_reactions_per_nuc, problem->n_target_genes);
-	g_string_append_printf(krn, "					propensity[reaction_number] = probability[reaction_number] = 0;\n");
-	g_string_append_printf(krn, "					reaction_number = ap * %d + 6 * %d + i;\n", problem->number_of_reactions_per_nuc, problem->n_target_genes);
-	g_string_append_printf(krn, "					propensity[reaction_number] = probability[reaction_number] = 0;\n");
-	g_string_append_printf(krn, "					reaction_number = ap * %d + 7 * %d + i;\n", problem->number_of_reactions_per_nuc, problem->n_target_genes);
-	g_string_append_printf(krn, "					propensity[reaction_number] = probability[reaction_number] = 0;\n");
-	g_string_append_printf(krn, "					reaction_number = ap * %d + 8 * %d + i;\n", problem->number_of_reactions_per_nuc, problem->n_target_genes);
-	g_string_append_printf(krn, "					propensity[reaction_number] = probability[reaction_number] = 0;\n");
-
-	g_string_append_printf(krn, "						}\n");
-	g_string_append_printf(krn, "					}\n");
-	g_string_append_printf(krn, "			barrier(CLK_LOCAL_MEM_FENCE);\n"); /* write all statuses, solution and bound */
+	g_string_append_printf(krn, "	for (int ap = nuc_id; ap < n_nucs; ap += nuc_size) {\n");
+	g_string_append_printf(krn, "		int reaction_number;\n");
+	g_string_append_printf(krn, "		for (int i = 0; i < %d; i++) {\n", problem->n_target_genes);
+	g_string_append_printf(krn, "			for (int j = 0; j < %d; j++) {\n", problem->n_tfs);
+	g_string_append_printf(krn, "				reaction_number = i * %d + j;\n", problem->n_tfs);
+	g_string_append_printf(krn, "				propensity_fast[ap * %d + reaction_number] = probability_fast[ap * %d + reaction_number] = 0;\n", problem->number_of_reactions_fast_per_nuc, problem->number_of_reactions_fast_per_nuc);
+	g_string_append_printf(krn, "				reaction_number = %d * %d + i * %d + j;\n", problem->n_tfs, problem->n_target_genes, problem->n_tfs);
+	g_string_append_printf(krn, "				propensity_fast[ap * %d + reaction_number] = probability_fast[ap * %d + reaction_number] = 0;\n", problem->number_of_reactions_fast_per_nuc, problem->number_of_reactions_fast_per_nuc);
+	g_string_append_printf(krn, "				reaction_number = 2 * %d * %d + i * %d + j;\n", problem->n_tfs, problem->n_target_genes, problem->n_tfs);
+	g_string_append_printf(krn, "				propensity_fast[ap * %d + reaction_number] = probability_fast[ap * %d + reaction_number] = 0;\n", problem->number_of_reactions_fast_per_nuc, problem->number_of_reactions_fast_per_nuc);
+	g_string_append_printf(krn, "				reaction_number = 3 * %d * %d + i * %d + j;\n", problem->n_tfs, problem->n_target_genes, problem->n_tfs);
+	g_string_append_printf(krn, "				propensity_fast[ap * %d + reaction_number] = probability_fast[ap * %d + reaction_number] = 0;\n", problem->number_of_reactions_fast_per_nuc, problem->number_of_reactions_fast_per_nuc);
+	g_string_append_printf(krn, "			}\n");
+	g_string_append_printf(krn, "			reaction_number = ap * %d + 0 * %d + i;\n", problem->number_of_reactions_per_nuc, problem->n_target_genes);
+	g_string_append_printf(krn, "			propensity[reaction_number] = probability[reaction_number] = 0;\n");
+	g_string_append_printf(krn, "			reaction_number = ap * %d + 1 * %d + i;\n", problem->number_of_reactions_per_nuc, problem->n_target_genes);
+	g_string_append_printf(krn, "			propensity[reaction_number] = probability[reaction_number] = 0;\n");
+	g_string_append_printf(krn, "			reaction_number = ap * %d + 2 * %d + i;\n", problem->number_of_reactions_per_nuc, problem->n_target_genes);
+	g_string_append_printf(krn, "			propensity[reaction_number] = probability[reaction_number] = 0;\n");
+	g_string_append_printf(krn, "			reaction_number = ap * %d + 3 * %d + i;\n", problem->number_of_reactions_per_nuc, problem->n_target_genes);
+	g_string_append_printf(krn, "			propensity[reaction_number] = probability[reaction_number] = 0;\n");
+	g_string_append_printf(krn, "			reaction_number = ap * %d + 4 * %d + i;\n", problem->number_of_reactions_per_nuc, problem->n_target_genes);
+	g_string_append_printf(krn, "			propensity[reaction_number] = probability[reaction_number] = 0;\n");
+	g_string_append_printf(krn, "			reaction_number = ap * %d + 5 * %d + i;\n", problem->number_of_reactions_per_nuc, problem->n_target_genes);
+	g_string_append_printf(krn, "			propensity[reaction_number] = probability[reaction_number] = 0;\n");
+	g_string_append_printf(krn, "			reaction_number = ap * %d + 6 * %d + i;\n", problem->number_of_reactions_per_nuc, problem->n_target_genes);
+	g_string_append_printf(krn, "			propensity[reaction_number] = probability[reaction_number] = 0;\n");
+	g_string_append_printf(krn, "			reaction_number = ap * %d + 7 * %d + i;\n", problem->number_of_reactions_per_nuc, problem->n_target_genes);
+	g_string_append_printf(krn, "			propensity[reaction_number] = probability[reaction_number] = 0;\n");
+	g_string_append_printf(krn, "			reaction_number = ap * %d + 8 * %d + i;\n", problem->number_of_reactions_per_nuc, problem->n_target_genes);
+	g_string_append_printf(krn, "			propensity[reaction_number] = probability[reaction_number] = 0;\n");
+	g_string_append_printf(krn, "		}\n");
+	g_string_append_printf(krn, "	}\n");
+	g_string_append_printf(krn, "	barrier(CLK_LOCAL_MEM_FENCE);\n"); /* write all statuses, solution and bound */
 	g_string_append_printf(krn, "	for (int rep = rep_id; rep < n_reps; rep += rep_size) {\n");
   	g_string_append_printf(krn, "		double random;\n");
 	g_string_append_printf(krn, "		double t_slow;\n");
