@@ -3296,7 +3296,7 @@ void setup_device (MSSA_Problem *problem)
 	GString*krn = g_string_new("#pragma OPENCL EXTENSION cl_khr_fp64: enable\n");
 	g_string_append_printf(krn, "\n");
 /*langdon_2009_CIGPU.pdf*/
-	g_string_append_printf(krn, "double rnd_double(int* seed)\n"); // 1 <= *seed < m
+	g_string_append_printf(krn, "double drnd_device(int* seed)\n"); // 1 <= *seed < m
 	g_string_append_printf(krn, "{\n");
 	g_string_append_printf(krn, "    int const a = 16807;\n"); //ie 7**5
 	g_string_append_printf(krn, "    int const m = 2147483647;\n"); //ie 2**31-1
@@ -3368,10 +3368,10 @@ void setup_device (MSSA_Problem *problem)
 	g_string_append_printf(krn, "					int i, j, k, s, sl, found, allele;\n");
 	g_string_append_printf(krn, "					double aggregate;\n");
 	g_string_append_printf(krn, "					double prop_sum = 0;\n");
-	g_string_append_printf(krn, "					double random = rnd_double(&seed);\n");
+	g_string_append_printf(krn, "					double random = drnd_device(&seed);\n");
 				/* Binding */
 	g_string_append_printf(krn, "					for (i = 0; i < %d; i++) {\n", problem->n_target_genes);
-	g_string_append_printf(krn, "						sl = (int)(rnd_double(&seed) * n_sites[i]);\n");
+	g_string_append_printf(krn, "						sl = (int)(drnd_device(&seed) * n_sites[i]);\n");
 	g_string_append_printf(krn, "						s = sl;\n");
 	g_string_append_printf(krn, "						for (k = 0; k < n_sites[i]; k++) {\n");
 	g_string_append_printf(krn, "							if (status_allele_0[repeat * n_nucs * %d + ap * %d + m_sites[i] + s] == 0) {\n", problem->sum_sites, problem->sum_sites);
@@ -3390,7 +3390,7 @@ void setup_device (MSSA_Problem *problem)
 	g_string_append_printf(krn, "						}\n");
 	g_string_append_printf(krn, "					}\n");
 	g_string_append_printf(krn, "					for (i = 0; i < %d; i++) {\n", problem->n_target_genes);
-	g_string_append_printf(krn, "						sl = (int)(rnd_double(&seed) * n_sites[i]);\n");
+	g_string_append_printf(krn, "						sl = (int)(drnd_device(&seed) * n_sites[i]);\n");
 	g_string_append_printf(krn, "						s = sl;\n");
 	g_string_append_printf(krn, "						for (k = 0; k < n_sites[i]; k++) {\n");
 	g_string_append_printf(krn, "							if (status_allele_1[repeat * n_nucs * %d + ap * %d + m_sites[i] + s] == 0) {\n", problem->sum_sites, problem->sum_sites);
@@ -3410,7 +3410,7 @@ void setup_device (MSSA_Problem *problem)
 	g_string_append_printf(krn, "					}\n");
 				/* Unbinding */
 	g_string_append_printf(krn, "					for (i = 0; i < %d; i++) {\n", problem->n_target_genes);
-	g_string_append_printf(krn, "						sl = (int)(rnd_double(&seed) * n_sites[i]);\n");
+	g_string_append_printf(krn, "						sl = (int)(drnd_device(&seed) * n_sites[i]);\n");
 	g_string_append_printf(krn, "						s = sl;\n");
 	g_string_append_printf(krn, "						for (k = 0; k < n_sites[i]; k++) {\n");
 	g_string_append_printf(krn, "							if (status_allele_0[repeat * n_nucs * %d + ap * %d + m_sites[i] + s] == 1) {\n", problem->sum_sites, problem->sum_sites);
@@ -3429,7 +3429,7 @@ void setup_device (MSSA_Problem *problem)
 	g_string_append_printf(krn, "						}\n");
 	g_string_append_printf(krn, "					}\n");
 	g_string_append_printf(krn, "					for (i = 0; i < %d; i++) {\n", problem->n_target_genes);
-	g_string_append_printf(krn, "						sl = (int)(rnd_double(&seed) * n_sites[i]);\n");
+	g_string_append_printf(krn, "						sl = (int)(drnd_device(&seed) * n_sites[i]);\n");
 	g_string_append_printf(krn, "						s = sl;\n");
 	g_string_append_printf(krn, "						for (k = 0; k < n_sites[i]; k++) {\n");
 	g_string_append_printf(krn, "							if (status_allele_1[repeat * n_nucs * %d + ap * %d + m_sites[i] + s] == 1) {\n", problem->sum_sites, problem->sum_sites);
@@ -3552,7 +3552,7 @@ void setup_device (MSSA_Problem *problem)
 	g_string_append_printf(krn, "							if (found != -1) break;\n");
 	g_string_append_printf(krn, "						}\n");
 	g_string_append_printf(krn, "					}\n");
-	g_string_append_printf(krn, "					tau_fast = -log(rnd_double(&seed)) / prop_sum;\n");
+	g_string_append_printf(krn, "					tau_fast = -log(drnd_device(&seed)) / prop_sum;\n");
 	g_string_append_printf(krn, "					site_number = -1;\n");
 	g_string_append_printf(krn, "					if (found != -1) {\n");
 	g_string_append_printf(krn, "						int kount_fw;\n");
@@ -3791,7 +3791,7 @@ void setup_device (MSSA_Problem *problem)
 	krn = g_string_new("#pragma OPENCL EXTENSION cl_khr_fp64: enable\n");
 	g_string_append_printf(krn, "\n");
 /*langdon_2009_CIGPU.pdf*/
-	g_string_append_printf(krn, "double rnd_double(int* seed)\n"); // 1 <= *seed < m
+	g_string_append_printf(krn, "double drnd_device(int* seed)\n"); // 1 <= *seed < m
 	g_string_append_printf(krn, "{\n");
 	g_string_append_printf(krn, "    int const a = 16807;\n"); //ie 7**5
 	g_string_append_printf(krn, "    int const m = 2147483647;\n"); //ie 2**31-1
@@ -3880,11 +3880,11 @@ void setup_device (MSSA_Problem *problem)
 	g_string_append_printf(krn, "						int i, j, k, s, allele;\n");
 	g_string_append_printf(krn, "						double aggregate;\n");
 	g_string_append_printf(krn, "						double prop_sum = 0;\n");
-	g_string_append_printf(krn, "						random = rnd_double(&seed);\n");
+	g_string_append_printf(krn, "						random = drnd_device(&seed);\n");
 				/* Binding */
 	g_string_append_printf(krn, "						for (i = 0; i < %d; i++) {\n", problem->n_target_genes);
 	g_string_append_printf(krn, "							double prop = 0;\n");
-	g_string_append_printf(krn, "							s = (int)(rnd_double(&seed) * n_sites[i]);\n");
+	g_string_append_printf(krn, "							s = (int)(drnd_device(&seed) * n_sites[i]);\n");
 	g_string_append_printf(krn, "							j = tf_index_allele_0[m_sites[i] + s];\n");
 	g_string_append_printf(krn, "							for (k = 0; k < n_sites[i]; k++) {\n");
 	g_string_append_printf(krn, "								if (status_allele_0[rep * n_nucs * %d + ap * %d + m_sites[i] + s] == 0) {\n", problem->sum_sites, problem->sum_sites);
@@ -3904,7 +3904,7 @@ void setup_device (MSSA_Problem *problem)
 	g_string_append_printf(krn, "							}\n");
 	g_string_append_printf(krn, "						}\n");
 	g_string_append_printf(krn, "						for (i = 0; i < %d; i++) {\n", problem->n_target_genes);
-	g_string_append_printf(krn, "							s = (int)(rnd_double(&seed) * n_sites[i]);\n");
+	g_string_append_printf(krn, "							s = (int)(drnd_device(&seed) * n_sites[i]);\n");
 	g_string_append_printf(krn, "							for (k = 0; k < n_sites[i]; k++) {\n");
 */
 	g_string_append_printf(krn, "								if (status_allele_1[rep * n_nucs * %d + ap * %d + m_sites[i] + s] == 0) {\n", problem->sum_sites, problem->sum_sites);
@@ -3924,7 +3924,7 @@ void setup_device (MSSA_Problem *problem)
 	g_string_append_printf(krn, "							}\n");
 	g_string_append_printf(krn, "						}\n");
 	g_string_append_printf(krn, "						for (i = 0; i < %d; i++) {\n", problem->n_target_genes);
-	g_string_append_printf(krn, "							s = (int)(rnd_double(&seed) * n_sites[i]);\n");
+	g_string_append_printf(krn, "							s = (int)(drnd_device(&seed) * n_sites[i]);\n");
 	g_string_append_printf(krn, "							for (k = 0; k < n_sites[i]; k++) {\n");
 */
 				/* Unbinding */
@@ -3945,7 +3945,7 @@ void setup_device (MSSA_Problem *problem)
 	g_string_append_printf(krn, "							}\n");
 	g_string_append_printf(krn, "						}\n");
 	g_string_append_printf(krn, "						for (i = 0; i < %d; i++) {\n", problem->n_target_genes);
-	g_string_append_printf(krn, "							s = (int)(rnd_double(&seed) * n_sites[i]);\n");
+	g_string_append_printf(krn, "							s = (int)(drnd_device(&seed) * n_sites[i]);\n");
 	g_string_append_printf(krn, "							for (k = 0; k < n_sites[i]; k++) {\n");
 */
 	g_string_append_printf(krn, "								if (status_allele_1[rep * n_nucs * %d + ap * %d + m_sites[i] + s] == 1) {\n", problem->sum_sites, problem->sum_sites);
@@ -4039,7 +4039,7 @@ void setup_device (MSSA_Problem *problem)
 	g_string_append_printf(krn, "							}\n");
 	g_string_append_printf(krn, "							if (found != -1) break;\n");
 	g_string_append_printf(krn, "						}\n");
-	g_string_append_printf(krn, "						tau_fast = -log(rnd_double(&seed)) / prop_sum;\n");
+	g_string_append_printf(krn, "						tau_fast = -log(drnd_device(&seed)) / prop_sum;\n");
 	g_string_append_printf(krn, "						site_number = -1;\n");
 	g_string_append_printf(krn, "						if (found != -1) {\n");
 	g_string_append_printf(krn, "							int kount_fw;\n");
@@ -4328,7 +4328,7 @@ void setup_device (MSSA_Problem *problem)
 	g_string_append_printf(krn, "				int reaction_target = -1; /* local reaction target */\n");
 	g_string_append_printf(krn, "				int reaction_nuc = -1; /* local reaction ap */\n");
 	g_string_append_printf(krn, "				double aggregate = 0;\n");
-	g_string_append_printf(krn, "				random = rnd_double(&seed);\n");
+	g_string_append_printf(krn, "				random = drnd_device(&seed);\n");
 	g_string_append_printf(krn, "				if (interphase == 1) {\n");
 	g_string_append_printf(krn, "					for (int ap = 0; ap < n_nucs; ap++) {\n");
 	g_string_append_printf(krn, "						for (int i = 0; i < %d; i++) {\n", problem->n_target_genes);
@@ -4503,7 +4503,7 @@ void setup_device (MSSA_Problem *problem)
 	g_string_append_printf(krn, "						break;\n");
 	g_string_append_printf(krn, "					}\n");
 	g_string_append_printf(krn, "				}\n");
-	g_string_append_printf(krn, "				tau_slow = -log(rnd_double(&seed)) / prop_sum_all;\n");
+	g_string_append_printf(krn, "				tau_slow = -log(drnd_device(&seed)) / prop_sum_all;\n");
 	g_string_append_printf(krn, "				for (int ap = 0; ap < %d; ap++) {\n", problem->cl_group_size);
 	g_string_append_printf(krn, "					tau_slow_loc[ap] = tau_slow;\n");
 	g_string_append_printf(krn, "				}\n");
