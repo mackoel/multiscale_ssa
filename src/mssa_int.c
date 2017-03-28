@@ -619,7 +619,6 @@ static cl_int status;
 static cl_mem solution_protein;
 static cl_mem solution_mrna;
 static cl_mem bound_protein;
-static cl_kernel knl;
 static cl_kernel knl_propagate;
 
 static cl_mem T;
@@ -1680,7 +1679,7 @@ void clear_device(MSSA_Problem *problem)
 /*
  * clean up
 */
-	CALL_CL_GUARDED(clReleaseKernel, (knl));
+	CALL_CL_GUARDED(clReleaseKernel, (knl_propagate));
 	CALL_CL_GUARDED(clReleaseCommandQueue, (queue));
 	CALL_CL_GUARDED(clReleaseContext, (ctx));
 
