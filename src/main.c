@@ -2098,8 +2098,8 @@ void add_bias (MSSA_Timeclass *tc, MSSA_Problem *problem)
 		for (int i = 0; i < tc->n_nucs; i++) {
 			for (int j = 0; j < problem->n_target_genes; j++) {
 				int k = problem->target_gene_index[j];
-				tc->solution_mrna[l * tc->n_nucs * problem->n_tfs + i * problem->n_tfs + k] += tc->data_mrna[i * problem->n_tfs + k];
-				tc->solution_protein[l * tc->n_nucs * problem->n_tfs + i * problem->n_tfs + k] += tc->data_protein[i * problem->n_tfs + k] * mol_per_conc;
+				tc->solution_mrna[l * tc->n_nucs * problem->n_tfs + i * problem->n_tfs + k] += ceil(tc->data_mrna[i * problem->n_tfs + k]);
+				tc->solution_protein[l * tc->n_nucs * problem->n_tfs + i * problem->n_tfs + k] += ceil(tc->data_protein[i * problem->n_tfs + k] * mol_per_conc);
 			}
 		}
 	}
@@ -4194,12 +4194,13 @@ void setup_device (MSSA_Problem *problem)
 	g_string_append_printf(krn, "							}\n");
 	g_string_append_printf(krn, "						}\n");
 	g_string_append_printf(krn, "						t_fast += tau_fast;\n");
+	g_string_append_printf(krn, "						barrier(CLK_LOCAL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE);\n"); /* write all statuses, solution and bound */
 	g_string_append_printf(krn, "						if (t_fast > t_stop_fast) break;\n");
 	g_string_append_printf(krn, "					}\n");
 	g_string_append_printf(krn, "				}\n"); /* endfor nuclei */
   	g_string_append_printf(krn, "			}\n"); /* endif interphase */
 	g_string_append_printf(krn, "			for (int ap = nuc_id; ap < n_nucs; ap += nuc_size) {\n");
-	g_string_append_printf(krn, "				prop_sum_loc[nuc_id] = 0;\n");
+	g_string_append_printf(krn, "				prop_sum_loc[ap] = 0;\n");
 	g_string_append_printf(krn, "			}\n");
 	g_string_append_printf(krn, "			barrier(CLK_LOCAL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE);\n"); /* write all statuses, solution and bound */
 	g_string_append_printf(krn, "			for (int ap = nuc_id; ap < n_nucs; ap += nuc_size) {\n");
@@ -5786,11 +5787,11 @@ void propagate_with_transport_4 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 			seedrn[rep * tc->n_nucs + ap] = seedrng + rep * tc->n_nucs + ap;
 		}
 	}
-/*
- * omp_set_nested(1);
- * OMP_NESTED=1
+#ifdef OPENMP_NESTED
+	omp_set_nested(1);
+/* OMP_NESTED=1*/
 #pragma omp parallel for schedule(static) default(none) shared(problem, tc, propensity, propensity_fast, site_tab, t_start_slow, t_stop_slow, interphase, seedrn, fast_time_max)
-*/
+#endif
 	for (int rep = 0; rep < problem->repeats; rep++) {
 		double tau_slow, t_slow;
 	  	t_slow = t_start_slow;
@@ -5855,6 +5856,7 @@ void propagate_with_transport_4 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 								}
 							}
 						}
+/*
 						if (prop_sum <= 0.00000000001) {
 							tau_fast = TMAX;
 							promoter_number = -1;
@@ -5863,6 +5865,7 @@ void propagate_with_transport_4 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 							site_number = -1;
 							break;
 						}
+*/
 						found = -1;
 						aggregate = 0;
 						random = prop_sum * drnd(&(seedrn[rep * tc->n_nucs + ap]));
@@ -5926,8 +5929,8 @@ void propagate_with_transport_4 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 									problem->status_allele_0[rep * tc->n_nucs * problem->sum_sites + ap * problem->sum_sites + problem->m_sites[promoter_number] + s] = 1;
 									tc->solution_protein[rep * tc->n_nucs * problem->n_tfs + ap * problem->n_tfs + tf] += -1;
 									tc->bound_protein[rep * tc->n_nucs * problem->n_tfs + ap * problem->n_tfs + tf] -= -1;
-									if (tc->solution_protein[rep * tc->n_nucs * problem->n_tfs + ap * problem->n_tfs + tf] < 0) {
-	 									g_warning("fast bind reaction n %d t %d: ap %d tf %d target %d < 0", found, reaction_type, ap, tf, promoter_number);
+									if (tc->solution_protein[rep * tc->n_nucs * problem->n_tfs + ap * problem->n_tfs + tf] < -1e-8) {
+	 									g_warning("fast bind reaction n %d t %d: ap %d tf %d target %d: %f < 0", allele, reaction_type, ap, tf, promoter_number, tc->solution_protein[rep * tc->n_nucs * problem->n_tfs + ap * problem->n_tfs + tf]);
 										tc->solution_protein[rep * tc->n_nucs * problem->n_tfs + ap * problem->n_tfs + tf] = 0;
 									}
 									if (problem->parameters->T[promoter_number * problem->n_tfs + tf] < 0) {
@@ -5966,8 +5969,8 @@ void propagate_with_transport_4 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 									problem->status_allele_0[rep * tc->n_nucs * problem->sum_sites + ap * problem->sum_sites + problem->m_sites[promoter_number] + s] = 0;
 									tc->solution_protein[rep * tc->n_nucs * problem->n_tfs + ap * problem->n_tfs + tf] += 1;
 									tc->bound_protein[rep * tc->n_nucs * problem->n_tfs + ap * problem->n_tfs + tf] -= 1;
-									if (tc->bound_protein[rep * tc->n_nucs * problem->n_tfs + ap * problem->n_tfs + tf] < 0) {
-	 									g_warning("fast unbind reaction n %d t %d: ap %d tf %d target %d < 0", found, reaction_type, ap, tf, promoter_number);
+									if (tc->bound_protein[rep * tc->n_nucs * problem->n_tfs + ap * problem->n_tfs + tf] < -1e-8) {
+	 									g_warning("fast unbind reaction n %d t %d: ap %d tf %d target %d: %f < 0", found, reaction_type, ap, tf, promoter_number, tc->bound_protein[rep * tc->n_nucs * problem->n_tfs + ap * problem->n_tfs + tf]);
 										tc->bound_protein[rep * tc->n_nucs * problem->n_tfs + ap * problem->n_tfs + tf] = 0;
 									}
 									if (problem->parameters->T[promoter_number * problem->n_tfs + tf] < 0) {
@@ -6009,8 +6012,8 @@ void propagate_with_transport_4 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 									problem->status_allele_1[rep * tc->n_nucs * problem->sum_sites + ap * problem->sum_sites + problem->m_sites[promoter_number] + s] = 1;
 									tc->solution_protein[rep * tc->n_nucs * problem->n_tfs + ap * problem->n_tfs + tf] += -1;
 									tc->bound_protein[rep * tc->n_nucs * problem->n_tfs + ap * problem->n_tfs + tf] -= -1;
-									if (tc->solution_protein[rep * tc->n_nucs * problem->n_tfs + ap * problem->n_tfs + tf] < 0) {
-	 									g_warning("fast bind reaction n %d t %d: ap %d tf %d target %d < 0", found, reaction_type, ap, tf, promoter_number);
+									if (tc->solution_protein[rep * tc->n_nucs * problem->n_tfs + ap * problem->n_tfs + tf] < -1e-8) {
+	 									g_warning("fast bind reaction n %d t %d: ap %d tf %d target %d: %f < 0", allele, reaction_type, ap, tf, promoter_number, tc->solution_protein[rep * tc->n_nucs * problem->n_tfs + ap * problem->n_tfs + tf]);
 										tc->solution_protein[rep * tc->n_nucs * problem->n_tfs + ap * problem->n_tfs + tf] = 0;
 									}
 									if (problem->parameters->T[promoter_number * problem->n_tfs + tf] < 0) {
@@ -6049,8 +6052,8 @@ void propagate_with_transport_4 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 									problem->status_allele_1[rep * tc->n_nucs * problem->sum_sites + ap * problem->sum_sites + problem->m_sites[promoter_number] + s] = 0;
 									tc->solution_protein[rep * tc->n_nucs * problem->n_tfs + ap * problem->n_tfs + tf] += 1;
 									tc->bound_protein[rep * tc->n_nucs * problem->n_tfs + ap * problem->n_tfs + tf] -= 1;
-									if (tc->bound_protein[rep * tc->n_nucs * problem->n_tfs + ap * problem->n_tfs + tf] < 0) {
-										g_warning("fast unbind reaction n %d t %d: ap %d tf %d target %d < 0", found, reaction_type, ap, tf, promoter_number);
+									if (tc->bound_protein[rep * tc->n_nucs * problem->n_tfs + ap * problem->n_tfs + tf] < -1e-8) {
+										g_warning("fast unbind reaction n %d t %d: ap %d tf %d target %d: %f < 0", found, reaction_type, ap, tf, promoter_number, tc->bound_protein[rep * tc->n_nucs * problem->n_tfs + ap * problem->n_tfs + tf]);
 										tc->bound_protein[rep * tc->n_nucs * problem->n_tfs + ap * problem->n_tfs + tf] = 0;
 									}
 									if (problem->parameters->T[promoter_number * problem->n_tfs + tf] < 0) {
@@ -6190,11 +6193,13 @@ void propagate_with_transport_4 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 					}
 				}
 			}
+/*
 			if (prop_sum_all <= 0.00000000001) {
 				g_warning("slow Sum of propensities is too small %g!", prop_sum_all);
 				tau_slow = TMAX;
 				break;
 			}
+*/
 			found = 0;
 			aggregate = 0;
 			random = prop_sum_all * drnd(&(seedrn[rep * tc->n_nucs]));
@@ -6435,7 +6440,7 @@ void inject (MSSA_Timeclass *tc, MSSA_Problem *problem)
 		for (int i = 0; i < tc->n_nucs; i++) {
 			for (int j = 0; j < problem->n_external_genes; j++) {
 				int k = problem->external_gene_index[j];
-				double conc = tc->data_protein[i * problem->n_tfs + k] * mol_per_conc - tc->bound_protein[l * tc->n_nucs * problem->n_tfs + i * problem->n_tfs + k];
+				double conc = ceil(tc->data_protein[i * problem->n_tfs + k] * mol_per_conc) - tc->bound_protein[l * tc->n_nucs * problem->n_tfs + i * problem->n_tfs + k];
 				tc->solution_protein[l * tc->n_nucs * problem->n_tfs + i * problem->n_tfs + k] = MAX(conc, 0);
 			}
 		}
