@@ -180,6 +180,7 @@ typedef struct {
 	double *chisq;
 	int *mrna_production_kount;
 	int *protein_production_kount;
+	int *reaction_kount;
 	double *mrna_production_time;
 	double *protein_production_time;
 } MSSA_Timeclass;
@@ -308,6 +309,7 @@ MSSA_Problem *mssa_read_problem(gchar*filename)
 		tc->mrna_production_time = g_new0(double, tc->n_nucs * problem->n_target_genes * problem->repeats);
 		tc->protein_production_kount = g_new0(int, tc->n_nucs * problem->n_target_genes * problem->repeats);
 		tc->protein_production_time = g_new0(double, tc->n_nucs * problem->n_target_genes * problem->repeats);
+		tc->reaction_kount = g_new0(int, tc->n_nucs * problem->repeats);
 		tc->corr = g_new0(double, problem->n_target_genes * problem->repeats);
 		tc->chisq = g_new0(double, problem->n_target_genes * problem->repeats);
 		problem->tc_list = g_list_append(problem->tc_list, tc);
@@ -503,6 +505,7 @@ void mssa_out_timeclass (MSSA_Timeclass *tc, MSSA_Problem *problem)
 			for (int j = 0; j < problem->n_target_genes; j++) {
 				fprintf(fp, " %.5f", tc->protein_production_time[l * tc->n_nucs * problem->n_target_genes + i * problem->n_target_genes + j]);
 			}
+			fprintf(fp, " %d", tc->reaction_kount[l * tc->n_nucs + i]);
 			fprintf(fp, "\n");
 		}
 	}
@@ -1146,6 +1149,7 @@ void propagate_with_transport_4 (MSSA_Timeclass *tc, MSSA_Problem *problem)
 				}
 			}
 			tau_slow = -log(g_rand_double(seedrn[rep * tc->n_nucs + reaction_nuc])) / prop_sum_all;
+			tc->reaction_kount[rep * tc->n_nucs + reaction_nuc]++;
 			switch (reaction_index) {
 				case 1: /* transcription 1 */
 					k = problem->target_gene_index[reaction_target];
@@ -1356,21 +1360,21 @@ void divide (MSSA_Timeclass *tc, MSSA_Problem *problem)
 		for (int l = 0; l < problem->repeats; l++) {
 			int i = 0;
 			for (int j = 0; j < problem->n_tfs; j++) {
-				tc->solution_mrna[l * tc->n_nucs * problem->n_tfs + 2 * i * problem->n_tfs + j] = tc_prev->solution_mrna[l * tc_prev->n_nucs * problem->n_tfs + i * problem->n_tfs + j] / 2;
-				tc->solution_protein[l * tc->n_nucs * problem->n_tfs + 2 * i * problem->n_tfs + j] = tc_prev->solution_protein[l * tc_prev->n_nucs * problem->n_tfs + i * problem->n_tfs + j] / 2;
+				tc->solution_mrna[l * tc->n_nucs * problem->n_tfs + 2 * i * problem->n_tfs + j] = ceil(0.5 * tc_prev->solution_mrna[l * tc_prev->n_nucs * problem->n_tfs + i * problem->n_tfs + j]);
+				tc->solution_protein[l * tc->n_nucs * problem->n_tfs + 2 * i * problem->n_tfs + j] = ceil(0.5 * tc_prev->solution_protein[l * tc_prev->n_nucs * problem->n_tfs + i * problem->n_tfs + j]);
 			}
 			for (int i = 1; i < tc_prev->n_nucs - 1; i++) {
 				for (int j = 0; j < problem->n_tfs; j++) {
-					tc->solution_mrna[l * tc->n_nucs * problem->n_tfs + 2 * i * problem->n_tfs + j] = tc_prev->solution_mrna[l * tc_prev->n_nucs * problem->n_tfs + i * problem->n_tfs + j] / 2;
-					tc->solution_mrna[l * tc->n_nucs * problem->n_tfs + (2 * i + 1) * problem->n_tfs + j] = tc_prev->solution_mrna[l * tc_prev->n_nucs * problem->n_tfs + i * problem->n_tfs + j] / 2;
-					tc->solution_protein[l * tc->n_nucs * problem->n_tfs + 2 * i * problem->n_tfs + j] = tc_prev->solution_protein[l * tc_prev->n_nucs * problem->n_tfs + i * problem->n_tfs + j] / 2;
-					tc->solution_protein[l * tc->n_nucs * problem->n_tfs + (2 * i + 1) * problem->n_tfs + j] = tc_prev->solution_protein[l * tc_prev->n_nucs * problem->n_tfs + i * problem->n_tfs + j] / 2;
+					tc->solution_mrna[l * tc->n_nucs * problem->n_tfs + 2 * i * problem->n_tfs + j] = ceil(0.5 * tc_prev->solution_mrna[l * tc_prev->n_nucs * problem->n_tfs + i * problem->n_tfs + j]);
+					tc->solution_mrna[l * tc->n_nucs * problem->n_tfs + (2 * i + 1) * problem->n_tfs + j] = floor(0.5 * tc_prev->solution_mrna[l * tc_prev->n_nucs * problem->n_tfs + i * problem->n_tfs + j]);
+					tc->solution_protein[l * tc->n_nucs * problem->n_tfs + 2 * i * problem->n_tfs + j] = ceil(0.5 * tc_prev->solution_protein[l * tc_prev->n_nucs * problem->n_tfs + i * problem->n_tfs + j]);
+					tc->solution_protein[l * tc->n_nucs * problem->n_tfs + (2 * i + 1) * problem->n_tfs + j] = floor(0.5 * tc_prev->solution_protein[l * tc_prev->n_nucs * problem->n_tfs + i * problem->n_tfs + j]);
 				}
 			}
 			i = tc_prev->n_nucs - 1;
 			for (int j = 0; j < problem->n_tfs; j++) {
-				tc->solution_mrna[l * tc->n_nucs * problem->n_tfs + (2 * i + 1) * problem->n_tfs + j] = tc_prev->solution_mrna[l * tc_prev->n_nucs * problem->n_tfs + i * problem->n_tfs + j] / 2;
-				tc->solution_protein[l * tc->n_nucs * problem->n_tfs + (2 * i + 1) * problem->n_tfs + j] = tc_prev->solution_protein[l * tc_prev->n_nucs * problem->n_tfs + i * problem->n_tfs + j] / 2;
+				tc->solution_mrna[l * tc->n_nucs * problem->n_tfs + (2 * i + 1) * problem->n_tfs + j] = ceil(0.5 * tc_prev->solution_mrna[l * tc_prev->n_nucs * problem->n_tfs + i * problem->n_tfs + j]);
+				tc->solution_protein[l * tc->n_nucs * problem->n_tfs + (2 * i + 1) * problem->n_tfs + j] = ceil(0.5 * tc_prev->solution_protein[l * tc_prev->n_nucs * problem->n_tfs + i * problem->n_tfs + j]);
 			}
 		}
 	} else {
@@ -1378,10 +1382,10 @@ void divide (MSSA_Timeclass *tc, MSSA_Problem *problem)
 		for (int l = 0; l < problem->repeats; l++) {
 			for (int i = 0; i < tc_prev->n_nucs; i++) {
 				for (int j = 0; j < problem->n_tfs; j++) {
-					tc->solution_mrna[l * tc->n_nucs * problem->n_tfs + 2 * i * problem->n_tfs + j] = tc_prev->solution_mrna[l * tc_prev->n_nucs * problem->n_tfs + i * problem->n_tfs + j] / 2;
-					tc->solution_mrna[l * tc->n_nucs * problem->n_tfs + (2 * i + 1) * problem->n_tfs + j] = tc_prev->solution_mrna[l * tc_prev->n_nucs * problem->n_tfs + i * problem->n_tfs + j] / 2;
-					tc->solution_protein[l * tc->n_nucs * problem->n_tfs + 2 * i * problem->n_tfs + j] = tc_prev->solution_protein[l * tc_prev->n_nucs * problem->n_tfs + i * problem->n_tfs + j] / 2;
-					tc->solution_protein[l * tc->n_nucs * problem->n_tfs + (2 * i + 1) * problem->n_tfs + j] = tc_prev->solution_protein[l * tc_prev->n_nucs * problem->n_tfs + i * problem->n_tfs + j] / 2;
+					tc->solution_mrna[l * tc->n_nucs * problem->n_tfs + 2 * i * problem->n_tfs + j] = ceil(0.5 * tc_prev->solution_mrna[l * tc_prev->n_nucs * problem->n_tfs + i * problem->n_tfs + j]);
+					tc->solution_mrna[l * tc->n_nucs * problem->n_tfs + (2 * i + 1) * problem->n_tfs + j] = floor(0.5 * tc_prev->solution_mrna[l * tc_prev->n_nucs * problem->n_tfs + i * problem->n_tfs + j]);
+					tc->solution_protein[l * tc->n_nucs * problem->n_tfs + 2 * i * problem->n_tfs + j] = ceil(0.5 * tc_prev->solution_protein[l * tc_prev->n_nucs * problem->n_tfs + i * problem->n_tfs + j]);
+					tc->solution_protein[l * tc->n_nucs * problem->n_tfs + (2 * i + 1) * problem->n_tfs + j] = floor(0.5 * tc_prev->solution_protein[l * tc_prev->n_nucs * problem->n_tfs + i * problem->n_tfs + j]);
 				}
 			}
 		}
